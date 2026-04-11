@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 
 class CardType(str, Enum):
@@ -88,3 +89,16 @@ def can_be_final_fact(card_type: str) -> bool:
     except ValueError:
         return False
     return ct in FINAL_CITABLE_CARD_TYPES and ct not in NON_FACTUAL_CARD_TYPES
+
+
+def is_citable_evidence(evidence: dict[str, Any]) -> bool:
+    card_type = str(evidence.get("card_type") or "")
+    evidence_level = str(evidence.get("evidence_level") or "")
+    relative_path = evidence.get("relative_path")
+    if not relative_path:
+        return False
+
+    if evidence_level == EvidenceLevel.PRIMARY.value:
+        return True
+
+    return card_type in {CardType.FENJUAN.value, CardType.FULLTEXT.value}

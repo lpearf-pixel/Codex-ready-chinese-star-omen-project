@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config.settings import get_settings
-from src.connectors.kb_contract import can_be_final_fact, resolve_evidence_level
+from src.connectors.kb_contract import can_be_final_fact, is_citable_evidence, resolve_evidence_level
 
 
 def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None) -> dict[str, Any]:
@@ -37,20 +37,22 @@ def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None
         resolved["resolved_path"] = None
         resolved["path_exists"] = None
 
-    has_minimum_primary_fields = bool(resolved.get("relative_path") and resolved.get("locator") and resolved.get("quote"))
-    if not resolved["final_citable"] or not has_minimum_primary_fields:
+    citable = is_citable_evidence(resolved)
+    if citable:
+        resolved["status"] = "citable"
+    else:
         resolved["status"] = "candidate_only"
-        if not resolved["final_citable"]:
+        if not resolved.get("relative_path"):
+            resolved["candidate_reason"] = "missing_relative_path"
+        elif not resolved["final_citable"]:
             resolved["candidate_reason"] = "card_type_not_primary"
         else:
             resolved["candidate_reason"] = "insufficient_primary_fields"
-    else:
-        resolved["status"] = "citable"
 
     resolved["trace"] = {
         "resolver_version": "m0",
         "requires_primary_card_types": ["fenjuan", "fulltext"],
-        "primary_projection_ready": has_minimum_primary_fields,
+        "primary_projection_ready": citable,
         "source_root_label": settings.kb_obsidian_source_root_label,
     }
     return resolved

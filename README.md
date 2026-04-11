@@ -104,6 +104,7 @@ python -m src.cli inspect-kb \
 
 ```bash
 python -m src.cli resolve-evidence --rule data/processed/corpus/sample_rule_one.json
+# 默认输出 JSON；若需人类可读格式可追加 --pretty
 ```
 
 ### 5) 调用 kb-search 进行召回
@@ -189,7 +190,7 @@ python -m src.cli inspect-kb \
 ```bash
 python -m src.cli resolve-evidence \
   --rule data/processed/corpus/sample_rules.json \
-  --show-json
+  
 ```
 
 ### 6) 常见报错与排查

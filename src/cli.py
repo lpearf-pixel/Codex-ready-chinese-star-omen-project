@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from src.config.settings import get_settings
 from src.connectors.evidence_resolver import resolve_evidence
-from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_CARD_TYPES
+from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_CARD_TYPES, is_citable_evidence
 from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
 
@@ -179,16 +179,16 @@ if typer:
     def resolve_evidence_cmd(
         rule: Path = typer.Option(..., "--rule"),
         kb_root: Path | None = typer.Option(None, "--kb-root"),
-        show_json: bool = typer.Option(False, "--show-json"),
+        pretty: bool = typer.Option(False, "--pretty"),
         strict: bool = typer.Option(False, "--strict"),
     ):
         out = resolve_evidence_impl(rule, kb_root=kb_root, strict=strict)
-        if show_json:
-            typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
-        else:
+        if pretty:
             typer.echo("\n".join(f"{k}: {v}" for k, v in out.items()))
             if out["status"] != "citable":
                 typer.echo("当前仅为候选证据")
+        else:
+            typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
     @app.command("search-kb")
@@ -229,12 +229,13 @@ if typer:
                 report["details"].append({"rule_id": rule_id, "status": "missing_evidence"})
                 continue
             resolved = resolve_evidence(evidence, kb_root or settings.kb_sources_root)
-            status = resolved.get("status", "unknown")
-            if status == "citable":
+            citable = is_citable_evidence(resolved)
+            status = "citable" if citable else "candidate_only"
+            if citable:
                 report["citable"] += 1
             else:
                 report["candidate_only"] += 1
-            report["details"].append({"rule_id": rule_id, "status": str(status)})
+            report["details"].append({"rule_id": rule_id, "status": status})
         typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
@@ -260,7 +261,7 @@ def _main_fallback():  # pragma: no cover
     p_resolve = sub.add_parser("resolve-evidence")
     p_resolve.add_argument("--rule", required=True)
     p_resolve.add_argument("--kb-root")
-    p_resolve.add_argument("--show-json", action="store_true")
+    p_resolve.add_argument("--pretty", action="store_true")
     p_resolve.add_argument("--strict", action="store_true")
 
     args = parser.parse_args()
@@ -283,12 +284,12 @@ def _main_fallback():  # pragma: no cover
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "resolve-evidence":
         out = resolve_evidence_impl(Path(args.rule), Path(args.kb_root) if args.kb_root else None, args.strict)
-        if args.show_json:
-            print(json.dumps(out, ensure_ascii=False, indent=2))
-        else:
+        if args.pretty:
             print("\n".join(f"{k}: {v}" for k, v in out.items()))
             if out["status"] != "citable":
                 print("当前仅为候选证据")
+        else:
+            print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
