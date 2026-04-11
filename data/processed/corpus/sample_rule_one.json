@@ -1,0 +1,36 @@
+{
+  "id": "rule_mars_guarding_xin_001",
+  "source_text": "荧惑守心",
+  "source_book": "开元占经",
+  "evidence": {
+    "kb_book_id": "kaiyuan_zhanjing",
+    "note_id": "kaiyuan_zhanjing.fenjuan.012.03",
+    "relative_path": "docs/古籍/唐開元占經/分卷/卷十二.md",
+    "card_type": "fenjuan",
+    "locator": "卷十二/荧惑占/第三段",
+    "anchor_heading": "荧惑守心",
+    "quote": "荧惑守心",
+    "manifest_ref": "manifest:kaiyuan_zhanjing",
+    "evidence_level": "primary"
+  },
+  "trigger": {
+    "body": "mars",
+    "event_type": "guarding",
+    "target": "xin_xiu",
+    "qualifiers": [
+      "visible_sky",
+      "sustained"
+    ]
+  },
+  "effect_domain": [
+    "politics",
+    "leadership",
+    "military"
+  ],
+  "severity": "high",
+  "time_window": "0-90d",
+  "interpretation": "传统上多视为中枢权力、军事、朝局紧张之象。",
+  "modern_translation": "偏向重大权力系统波动或高层冲突风险信号，不直接等同具体事件。",
+  "validation_status": "partially_verified",
+  "linked_cases": []
+}

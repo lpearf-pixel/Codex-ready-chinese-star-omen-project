@@ -2,25 +2,25 @@
 
 中国传统星占长期模型（Codex-ready）初始化版本（Python 3.12）。
 
-## 目标
+## 项目介绍
 
-本仓库聚焦于：
+本项目的定位是“证据可回链”的中国传统星占研究引擎，而不是直接产出黑盒预测结果。核心思路：
 
-- 只读消费外部古籍知识库标准化结果
-- 星官-现代恒星对齐与历元/岁差处理
-- 占辞规则结构化与证据回链
-- 历史回测与月/季度报告支撑
+1. **只读消费外部古籍知识库**（如 Obsidian + RAG 中台产物）。
+2. 将古文规则转换为可校验的结构化对象（Schema + Pydantic）。
+3. 用“两段式检索”保证证据可追溯：先高召回，再强制回到原文证据。
+4. 把研究、推演、验证流程解耦，支持后续长期迭代。
 
-## 当前范围（M0）
+## 当前能力（M0）
 
-- 四大核心 Schema
-- 外部知识库契约定义
-- `kb-search` 检索接入
-- 证据解析器（回链与最终可引用检查）
-- CLI：
+- 四大核心 Schema：`Asterism` / `CelestialEvent` / `OmenRule` / `BacktestRecord`
+- 外部知识库契约：`card_type`、`evidence_level`、`final_citable`
+- Connector 接入层：`kb-search` 检索、manifest 读取、证据解析回链
+- CLI 命令：
   - `python -m src.cli validate-data`
   - `python -m src.cli inspect-kb --root <path>`
   - `python -m src.cli resolve-evidence --rule <path>`
+- 样例数据：星官样例、规则样例、外部知识库契约样例
 
 ## 设计约束
 
@@ -35,6 +35,34 @@
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-pytest
+```
+
+## 测试手册（README 版）
+
+### 1) 运行单元测试
+
+```bash
+pytest -q
+```
+
+### 2) 运行数据校验 CLI
+
+```bash
 python -m src.cli validate-data
 ```
+
+### 3) 巡检外部知识库 manifest
+
+```bash
+python -m src.cli inspect-kb --root <你的知识库根目录>
+```
+
+### 4) 解析单条规则中的证据链
+
+```bash
+python -m src.cli resolve-evidence --rule data/processed/corpus/sample_rule_one.json
+```
+
+## 测试报告入口
+
+- 最新本地测试报告见：`docs/test_report.md`
