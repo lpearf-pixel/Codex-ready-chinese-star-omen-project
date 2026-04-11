@@ -20,6 +20,7 @@
   - `python -m src.cli validate-data`
   - `python -m src.cli inspect-kb --root <path>`
   - `python -m src.cli resolve-evidence --rule <path>`
+  - `python -m src.cli search-kb "<query>" --book-id <book_id>`
 - 样例数据：星官样例、规则样例、外部知识库契约样例
 
 ## 设计约束
@@ -75,12 +76,18 @@ python -m src.cli inspect-kb --root <你的知识库根目录>
 python -m src.cli resolve-evidence --rule data/processed/corpus/sample_rule_one.json
 ```
 
+### 5) 调用 kb-search 进行召回
+
+```bash
+python -m src.cli search-kb "荧惑守心" --book-id kaiyuan_zhanjing --card-type term_card --limit 5
+```
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`
 
 ### 最新测试结论（2026-04-11）
 
-- `pytest -q`：**8 passed, 2 skipped**
+- `pytest -q`：**8 passed, 3 skipped**
 - `python -m src.cli validate-data`：当前容器缺少 `typer`，因此命令失败
 - 建议在本地 Python 3.12 虚拟环境复现测试流程（详见 `docs/test_report.md`）

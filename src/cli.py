@@ -7,6 +7,7 @@ import typer
 from jsonschema import validate
 
 from src.connectors.evidence_resolver import resolve_evidence
+from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
 
 app = typer.Typer(help="Chinese astro model CLI")
@@ -48,6 +49,25 @@ def resolve_evidence_cmd(rule: Path, kb_root: Path | None = None):
         raise typer.BadParameter("rule file has no evidence")
     resolved = resolve_evidence(evidence, kb_root)
     typer.echo(json.dumps(resolved, ensure_ascii=False, indent=2))
+
+
+@app.command("search-kb")
+def search_kb(
+    query: str,
+    book_id: str | None = None,
+    card_type: list[str] | None = None,
+    evidence_level: str | None = None,
+    limit: int = 20,
+):
+    retriever = KBSearchRetriever()
+    result = retriever.search(
+        query,
+        book_id=book_id,
+        card_types=card_type,
+        evidence_level=evidence_level,
+        limit=limit,
+    )
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

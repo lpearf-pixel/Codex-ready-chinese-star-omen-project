@@ -19,7 +19,7 @@ python -m src.cli validate-data
 
 ## 3. 结果摘要
 
-- `pytest -q`：**8 passed, 2 skipped**
+- `pytest -q`：**8 passed, 3 skipped**
 - `python -m src.cli validate-data`：在当前容器中失败（缺少 `typer` 依赖）
 
 ## 4. 已覆盖能力
@@ -30,6 +30,7 @@ python -m src.cli validate-data
 4. **检索器请求构造**：`kb-search` payload 过滤参数构造。
 5. **CLI 校验命令**：在依赖可用时可执行 `validate-data`。
 6. **配置读取**：`config/app_config.yaml` 中 `kb_search.base_url/timeout_seconds` 可被加载并用于默认检索配置。
+7. **CLI 检索命令**：`search-kb` 命令参数传递与输出序列化。
 
 ## 5. 风险与建议
 
