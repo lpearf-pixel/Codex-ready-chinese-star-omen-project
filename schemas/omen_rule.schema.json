@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OmenRule",
+  "type": "object",
+  "required": ["id", "source_text", "source_book", "trigger", "effect_domain", "validation_status"],
+  "properties": {
+    "id": { "type": "string" },
+    "source_text": { "type": "string" },
+    "source_book": { "type": "string" },
+    "source_chapter": { "type": "string" },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "kb_book_id": { "type": "string" },
+        "note_id": { "type": "string" },
+        "relative_path": { "type": "string" },
+        "card_type": { "type": "string" },
+        "locator": { "type": "string" },
+        "anchor_heading": { "type": "string" },
+        "quote": { "type": "string" },
+        "manifest_ref": { "type": "string" },
+        "evidence_level": { "type": "string" }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["body", "event_type"],
+      "properties": {
+        "body": { "type": "string" },
+        "event_type": { "type": "string" },
+        "target": { "type": "string" },
+        "qualifiers": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "effect_domain": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["politics", "leadership", "military", "agriculture", "climate", "economy", "public_health", "ritual", "border", "general_omen"]
+      }
+    },
+    "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "time_window": { "type": "string" },
+    "interpretation": { "type": "string" },
+    "modern_translation": { "type": "string" },
+    "validation_status": {
+      "type": "string",
+      "enum": ["unverified", "partially_verified", "historically_attested", "disputed"]
+    },
+    "linked_cases": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "string" }
+  }
+}

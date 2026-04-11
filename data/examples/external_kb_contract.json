@@ -1,0 +1,36 @@
+{
+  "book_id": "kaiyuan_zhanjing",
+  "note_id_pattern": "{book_id}.{card_type}.{volume}.{section}",
+  "card_type": [
+    "fenjuan",
+    "fulltext",
+    "xingguan_card",
+    "zhusu_card",
+    "term_card",
+    "extract_card",
+    "topic_index",
+    "chapter_summary",
+    "nav",
+    "prompt_asset",
+    "qa_example"
+  ],
+  "evidence_level": ["primary", "structured", "index", "prompt", "example"],
+  "proof_priority": [
+    "fenjuan",
+    "fulltext",
+    "xingguan_card",
+    "zhusu_card",
+    "term_card",
+    "extract_card",
+    "topic_index",
+    "chapter_summary",
+    "nav",
+    "prompt_asset",
+    "qa_example"
+  ],
+  "final_citable": ["fenjuan", "fulltext"],
+  "path_patterns": {
+    "fenjuan": "docs/古籍/**/分卷/*.md",
+    "fulltext": "docs/古籍/**/全文*.md"
+  }
+}

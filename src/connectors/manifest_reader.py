@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+
+class ManifestReader:
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
+
+    def load_manifest(self, manifest_ref: str) -> dict[str, Any]:
+        if not manifest_ref.startswith("manifest:"):
+            raise ValueError("manifest_ref must start with 'manifest:'")
+        manifest_name = manifest_ref.split(":", 1)[1]
+        path = self.root / "manifests" / f"{manifest_name}.json"
+        if not path.exists():
+            raise FileNotFoundError(path)
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def inspect(self) -> dict[str, list[str]]:
+        manifests_dir = self.root / "manifests"
+        if not manifests_dir.exists():
+            return {"manifests": []}
+        return {"manifests": sorted(p.name for p in manifests_dir.glob("*.json"))}

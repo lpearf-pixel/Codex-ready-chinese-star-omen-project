@@ -1,0 +1,85 @@
+[
+  {
+    "id": "rule_mars_guarding_xin_001",
+    "source_text": "荧惑守心",
+    "source_book": "开元占经",
+    "evidence": {
+      "kb_book_id": "kaiyuan_zhanjing",
+      "note_id": "kaiyuan_zhanjing.fenjuan.012.03",
+      "relative_path": "docs/古籍/唐開元占經/分卷/卷十二.md",
+      "card_type": "fenjuan",
+      "locator": "卷十二/荧惑占/第三段",
+      "anchor_heading": "荧惑守心",
+      "quote": "荧惑守心",
+      "manifest_ref": "manifest:kaiyuan_zhanjing",
+      "evidence_level": "primary"
+    },
+    "trigger": {
+      "body": "mars",
+      "event_type": "guarding",
+      "target": "xin_xiu",
+      "qualifiers": ["visible_sky", "sustained"]
+    },
+    "effect_domain": ["politics", "leadership", "military"],
+    "severity": "high",
+    "time_window": "0-90d",
+    "interpretation": "传统上多视为中枢权力、军事、朝局紧张之象。",
+    "modern_translation": "偏向重大权力系统波动或高层冲突风险信号，不直接等同具体事件。",
+    "validation_status": "partially_verified",
+    "linked_cases": []
+  },
+  {
+    "id": "rule_jupiter_saturn_conjunction_001",
+    "source_text": "土木合",
+    "source_book": "乙巳占",
+    "trigger": {
+      "body": "jupiter",
+      "event_type": "conjunction",
+      "target": "saturn",
+      "qualifiers": ["planet_planet"]
+    },
+    "effect_domain": ["politics", "economy", "general_omen"],
+    "severity": "medium",
+    "time_window": "0-365d",
+    "interpretation": "常被视为大周期更替、制度节奏转换的长期信号。",
+    "modern_translation": "适合作为周期切换背景指标，不适合单独用于短线预测。",
+    "validation_status": "unverified",
+    "linked_cases": []
+  },
+  {
+    "id": "rule_five_planets_gathering_001",
+    "source_text": "五星聚",
+    "source_book": "开元占经",
+    "trigger": {
+      "body": "other",
+      "event_type": "gathering",
+      "target": "multi_planet",
+      "qualifiers": ["five_visible_planets", "compact_region"]
+    },
+    "effect_domain": ["politics", "ritual", "general_omen"],
+    "severity": "high",
+    "time_window": "0-180d",
+    "interpretation": "传统多视为极强时代性征兆，但吉凶解释依宿位、方位、时令而异。",
+    "modern_translation": "必须结合所在宿位与观测地，不可只凭“聚”本身下结论。",
+    "validation_status": "unverified",
+    "linked_cases": []
+  },
+  {
+    "id": "rule_moon_invading_xin_001",
+    "source_text": "月犯心宿",
+    "source_book": "灵台秘苑",
+    "trigger": {
+      "body": "moon",
+      "event_type": "invading",
+      "target": "xin_xiu",
+      "qualifiers": ["moon_star_intrusion"]
+    },
+    "effect_domain": ["leadership", "ritual", "general_omen"],
+    "severity": "medium",
+    "time_window": "0-30d",
+    "interpretation": "月体触发类天象更偏短周期征兆，应期通常短于五星。",
+    "modern_translation": "适合作为短期环境扰动指标，不宜拔高为长期结构结论。",
+    "validation_status": "unverified",
+    "linked_cases": []
+  }
+]
