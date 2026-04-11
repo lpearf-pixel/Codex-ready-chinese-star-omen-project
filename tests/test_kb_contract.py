@@ -1,4 +1,4 @@
-from src.connectors.kb_contract import can_be_final_fact, is_final_citable, resolve_evidence_level
+from src.connectors.kb_contract import can_be_final_fact, infer_metadata_from_path, is_final_citable, resolve_evidence_level
 
 
 def test_final_citable_primary_cards():
@@ -13,3 +13,21 @@ def test_non_citable_prompt_asset():
 
 def test_resolve_evidence_level():
     assert resolve_evidence_level("term_card") == "structured"
+
+
+def test_infer_zhusu_card_from_path():
+    meta = infer_metadata_from_path("docs/kaiyuan_zhanjing/逐宿卡/心宿.md")
+    assert meta["card_type"] == "zhusu_card"
+    assert meta["evidence_level"] == "structured"
+
+
+def test_infer_fenjuan_from_path():
+    meta = infer_metadata_from_path("docs/kaiyuan_zhanjing/分卷/卷十二.md")
+    assert meta["card_type"] == "fenjuan"
+    assert meta["evidence_level"] == "primary"
+
+
+def test_infer_fulltext_from_path():
+    meta = infer_metadata_from_path("docs/kaiyuan_zhanjing/全文合併版.md")
+    assert meta["card_type"] == "fulltext"
+    assert meta["evidence_level"] == "primary"

@@ -9,13 +9,8 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     httpx = None
 
-from src.config.settings import (
-    Settings,
-    SettingsError,
-    get_settings,
-    mask_secret,
-    require_api_key,
-)
+from src.config.settings import Settings, SettingsError, get_settings, mask_secret, require_api_key
+from src.connectors.kb_contract import infer_metadata_from_path
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +83,39 @@ class KBSearchRetriever:
             )
             raise KBSearchError(f"kb-search request failed: method={method} url={url} error={exc}") from exc
 
+    @staticmethod
+    def _normalize_hits(raw_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        inferred_hits: list[dict[str, Any]] = []
+        for hit in raw_hits:
+            inferred = infer_metadata_from_path(hit.get("path"))
+            inferred_hits.append(
+                {
+                    **hit,
+                    "book_id": inferred.get("book_id"),
+                    "card_type": inferred.get("card_type"),
+                    "evidence_level": inferred.get("evidence_level"),
+                }
+            )
+        return inferred_hits
+
+    @staticmethod
+    def _apply_local_filters(
+        inferred_hits: list[dict[str, Any]],
+        *,
+        book_id: str | None = None,
+        card_types: list[str] | None = None,
+        evidence_level: str | None = None,
+    ) -> list[dict[str, Any]]:
+        out = inferred_hits
+        if book_id:
+            out = [h for h in out if h.get("book_id") == book_id]
+        if card_types:
+            allowed = set(card_types)
+            out = [h for h in out if h.get("card_type") in allowed]
+        if evidence_level:
+            out = [h for h in out if h.get("evidence_level") == evidence_level]
+        return out
+
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/v1/health", use_auth=False)
 
@@ -106,16 +134,21 @@ class KBSearchRetriever:
             "limit": limit if limit is not None else self.default_limit,
             "collection": collection or self.default_collection,
         }
-        filters: dict[str, Any] = {}
-        if book_id:
-            filters["book_id"] = book_id
-        if card_types:
-            filters["card_type"] = card_types
-        if evidence_level:
-            filters["evidence_level"] = evidence_level
-        if filters:
-            payload["filters"] = filters
-        return self._request("POST", "/v1/retrieve", json_payload=payload, use_auth=True)
+        raw_result = self._request("POST", "/v1/retrieve", json_payload=payload, use_auth=True)
+        raw_hits = raw_result.get("hits", [])
+        inferred_hits = self._normalize_hits(raw_hits)
+        filtered_hits = self._apply_local_filters(
+            inferred_hits,
+            book_id=book_id,
+            card_types=card_types,
+            evidence_level=evidence_level,
+        )
+        return {
+            **raw_result,
+            "raw_hits": raw_hits,
+            "inferred_hits": inferred_hits,
+            "hits": filtered_hits,
+        }
 
     def rag_query(
         self,

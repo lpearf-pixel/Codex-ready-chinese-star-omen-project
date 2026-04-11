@@ -49,10 +49,16 @@ def validate_data_impl(
 
 
 def _split_hits(result: dict[str, Any]) -> dict[str, Any]:
-    hits = result.get("hits", [])
-    structured = [h for h in hits if h.get("card_type") in [c.value for c in STAGE1_RECALL_CARD_TYPES]]
-    primary = [h for h in hits if h.get("card_type") in [c.value for c in STAGE2_PRIMARY_CARD_TYPES]]
-    return {"hits": hits, "structured_hits": structured, "primary_hits": primary}
+    filtered_hits = result.get("hits", [])
+    structured = [h for h in filtered_hits if h.get("card_type") in [c.value for c in STAGE1_RECALL_CARD_TYPES]]
+    primary = [h for h in filtered_hits if h.get("card_type") in [c.value for c in STAGE2_PRIMARY_CARD_TYPES]]
+    return {
+        "raw_hits": result.get("raw_hits", []),
+        "inferred_hits": result.get("inferred_hits", []),
+        "filtered_hits": filtered_hits,
+        "structured_hits": structured,
+        "primary_hits": primary,
+    }
 
 
 def inspect_kb_impl(
@@ -87,8 +93,9 @@ def inspect_kb_impl(
                 "hint": "check KB_SEARCH_API_KEY, KB_SEARCH_BASE_URL/KB_SEARCH_API_PORT, and whether kb-search service is running",
             }
         if card_type:
-            stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("card_type") in set(card_type)]
-            stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("card_type") in set(card_type)]
+            allowed = set(card_type)
+            stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("card_type") in allowed]
+            stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("card_type") in allowed]
         if evidence_level:
             stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
             stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("evidence_level") == evidence_level]

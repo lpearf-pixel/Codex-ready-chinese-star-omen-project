@@ -33,8 +33,27 @@ def test_retrieve_request_payload(monkeypatch):
     assert captured["method"] == "POST"
     assert captured["path"] == "/v1/retrieve"
     assert captured["use_auth"] is True
-    assert captured["payload"]["filters"]["book_id"] == "kaiyuan_zhanjing"
+    assert captured["payload"]["query"] == "荧惑"
+    assert "filters" not in captured["payload"]
     assert captured["payload"]["collection"] == "local_kb_default"
+
+
+def test_retrieve_local_metadata_inference_and_filter(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
+        return {
+            "hits": [
+                {"chunk_id": "c1", "path": "docs/kaiyuan_zhanjing/逐宿卡/心宿.md", "snippet": "..."},
+                {"chunk_id": "c2", "path": "docs/kaiyuan_zhanjing/分卷/卷十二.md", "snippet": "..."},
+            ]
+        }
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.retrieve("心宿", card_types=["zhusu_card"])
+    assert len(out["raw_hits"]) == 2
+    assert out["inferred_hits"][0]["card_type"] == "zhusu_card"
+    assert len(out["hits"]) == 1
+    assert out["hits"][0]["chunk_id"] == "c1"
 
 
 def test_api_key_required():

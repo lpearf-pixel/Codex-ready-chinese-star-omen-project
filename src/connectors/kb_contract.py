@@ -69,6 +69,25 @@ CARD_TYPE_TO_EVIDENCE_LEVEL: dict[CardType, EvidenceLevel] = {
 }
 
 
+PATH_CARD_TYPE_RULES: list[tuple[str, str]] = [
+    ("/分卷/", CardType.FENJUAN.value),
+    ("全文合併版", CardType.FULLTEXT.value),
+    ("全文合并版", CardType.FULLTEXT.value),
+    ("/星官卡/", CardType.XINGGUAN_CARD.value),
+    ("/逐宿卡/", CardType.ZHUSU_CARD.value),
+    ("/术语卡片/", CardType.TERM_CARD.value),
+    ("/知识抽取卡/", CardType.EXTRACT_CARD.value),
+    ("/主题索引/", CardType.TOPIC_INDEX.value),
+    ("/章节摘要卡/", CardType.CHAPTER_SUMMARY.value),
+    ("/导航/", CardType.NAV.value),
+    ("/agent/", CardType.PROMPT_ASSET.value),
+    ("/prompts/", CardType.PROMPT_ASSET.value),
+    ("02-Agent入口.md", CardType.PROMPT_ASSET.value),
+    ("schema.yaml", CardType.PROMPT_ASSET.value),
+    ("/问答样例库/", CardType.QA_EXAMPLE.value),
+]
+
+
 def is_final_citable(card_type: str) -> bool:
     try:
         return CardType(card_type) in FINAL_CITABLE_CARD_TYPES
@@ -89,6 +108,37 @@ def can_be_final_fact(card_type: str) -> bool:
     except ValueError:
         return False
     return ct in FINAL_CITABLE_CARD_TYPES and ct not in NON_FACTUAL_CARD_TYPES
+
+
+def infer_book_id_from_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    normalized = path.replace("\\", "/")
+    parts = [p for p in normalized.split("/") if p]
+    if "docs" in parts:
+        idx = parts.index("docs")
+        if idx + 1 < len(parts):
+            return parts[idx + 1]
+    return parts[0] if parts else None
+
+
+def infer_card_type_from_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    normalized = path.replace("\\", "/")
+    for token, card_type in PATH_CARD_TYPE_RULES:
+        if token in normalized:
+            return card_type
+    return None
+
+
+def infer_metadata_from_path(path: str | None) -> dict[str, str | None]:
+    card_type = infer_card_type_from_path(path)
+    return {
+        "book_id": infer_book_id_from_path(path),
+        "card_type": card_type,
+        "evidence_level": resolve_evidence_level(card_type) if card_type else None,
+    }
 
 
 def is_citable_evidence(evidence: dict[str, Any]) -> bool:

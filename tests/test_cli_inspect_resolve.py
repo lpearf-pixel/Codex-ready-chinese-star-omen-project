@@ -16,8 +16,16 @@ def test_inspect_kb_with_query_filters(monkeypatch, tmp_path):
         assert query == "荧惑守心"
         assert kwargs["book_id"] == "kaiyuan_zhanjing"
         return {
-            "stage1": {"hits": [{"id": "n1", "card_type": "term_card"}]},
-            "stage2": {"hits": [{"id": "n2", "card_type": "fenjuan"}]},
+            "stage1": {
+                "raw_hits": [{"id": "n1", "path": "docs/kaiyuan_zhanjing/术语卡片/守.md"}],
+                "inferred_hits": [{"id": "n1", "card_type": "term_card", "evidence_level": "structured"}],
+                "hits": [{"id": "n1", "card_type": "term_card", "evidence_level": "structured"}],
+            },
+            "stage2": {
+                "raw_hits": [{"id": "n2", "path": "docs/kaiyuan_zhanjing/分卷/卷十二.md"}],
+                "inferred_hits": [{"id": "n2", "card_type": "fenjuan", "evidence_level": "primary"}],
+                "hits": [{"id": "n2", "card_type": "fenjuan", "evidence_level": "primary"}],
+            },
         }
 
     monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
@@ -38,7 +46,9 @@ def test_inspect_kb_with_query_filters(monkeypatch, tmp_path):
     assert result.exit_code == 0
     body = json.loads(result.stdout)
     assert body["mode"] == "search"
-    assert body["stage1"]["structured_hits"][0]["id"] == "n1"
+    assert body["stage1"]["raw_hits"][0]["id"] == "n1"
+    assert body["stage1"]["inferred_hits"][0]["card_type"] == "term_card"
+    assert body["stage1"]["filtered_hits"][0]["id"] == "n1"
     assert body["stage2"]["primary_hits"][0]["id"] == "n2"
 
 
