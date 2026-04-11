@@ -66,3 +66,9 @@ python -m src.cli resolve-evidence --rule data/processed/corpus/sample_rule_one.
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`
+
+### 最新测试结论（2026-04-11）
+
+- `pytest -q`：**6 passed, 2 skipped**
+- `python -m src.cli validate-data`：当前容器缺少 `typer`，因此命令失败
+- 建议在本地 Python 3.12 虚拟环境复现测试流程（详见 `docs/test_report.md`）
