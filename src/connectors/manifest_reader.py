@@ -4,10 +4,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.config.settings import get_settings
+
 
 class ManifestReader:
-    def __init__(self, root: str | Path) -> None:
-        self.root = Path(root)
+    def __init__(self, root: str | Path | None = None) -> None:
+        cfg = get_settings()
+        self.root = Path(root) if root else Path(cfg.kb_sources_root)
 
     def load_manifest(self, manifest_ref: str) -> dict[str, Any]:
         if not manifest_ref.startswith("manifest:"):

@@ -18,6 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover
             if key not in instance:
                 raise ValueError(f"Missing required field: {key}")
 
+from src.config.settings import get_settings
 from src.connectors.evidence_resolver import resolve_evidence
 from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_CARD_TYPES
 from src.connectors.kb_search_retriever import KBSearchRetriever
@@ -60,21 +61,38 @@ def inspect_kb_impl(
     book_id: str | None = None,
     card_type: list[str] | None = None,
     evidence_level: str | None = None,
-    limit: int = 20,
+    limit: int | None = None,
     show_raw: bool = False,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    collection: str | None = None,
 ):
+    settings = get_settings()
+    effective_limit = limit if limit is not None else settings.app_default_limit
     if query:
-        retriever = KBSearchRetriever()
+        retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
         try:
-            stage = retriever.two_stage_retrieve(query, book_id=book_id, limit=limit)
+            stage = retriever.two_stage_retrieve(
+                query,
+                book_id=book_id,
+                limit=effective_limit,
+                collection=collection,
+            )
         except Exception as exc:
             return {
                 "mode": "search",
                 "query": query,
                 "root": str(root) if root else None,
                 "error": str(exc),
-                "hint": "check KB_SEARCH_API_KEY, KB_SEARCH_API_PORT, and whether kb-search service is running",
+                "hint": "check KB_SEARCH_API_KEY, KB_SEARCH_BASE_URL/KB_SEARCH_API_PORT, and whether kb-search service is running",
             }
+        if card_type:
+            stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("card_type") in set(card_type)]
+            stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("card_type") in set(card_type)]
+        if evidence_level:
+            stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
+            stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
+
         out = {
             "mode": "search",
             "query": query,
@@ -95,6 +113,7 @@ def inspect_kb_impl(
 
 
 def resolve_evidence_impl(rule: Path, kb_root: Path | None = None, strict: bool = False):
+    settings = get_settings()
     rule_obj = _load_json(rule)
     if isinstance(rule_obj, list):
         if not rule_obj:
@@ -105,7 +124,8 @@ def resolve_evidence_impl(rule: Path, kb_root: Path | None = None, strict: bool 
     if not evidence:
         raise ValueError("rule file has no evidence")
 
-    resolved = resolve_evidence(evidence, kb_root)
+    effective_root = kb_root if kb_root else Path(settings.kb_sources_root)
+    resolved = resolve_evidence(evidence, effective_root)
     payload = {
         "rule_id": rule_obj.get("id"),
         "kb_book_id": resolved.get("kb_book_id"),
@@ -145,10 +165,13 @@ if typer:
         book_id: str | None = typer.Option(None, "--book-id"),
         card_type: list[str] | None = typer.Option(None, "--card-type"),
         evidence_level: str | None = typer.Option(None, "--evidence-level"),
-        limit: int = typer.Option(20, "--limit"),
+        limit: int | None = typer.Option(None, "--limit"),
+        collection: str | None = typer.Option(None, "--collection"),
+        base_url: str | None = typer.Option(None, "--base-url"),
+        api_key: str | None = typer.Option(None, "--api-key"),
         show_raw: bool = typer.Option(False, "--show-raw"),
     ):
-        out = inspect_kb_impl(root, query, book_id, card_type, evidence_level, limit, show_raw)
+        out = inspect_kb_impl(root, query, book_id, card_type, evidence_level, limit, show_raw, base_url, api_key, collection)
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
@@ -169,14 +192,31 @@ if typer:
 
 
     @app.command("search-kb")
-    def search_kb(query: str, book_id: str | None = None, card_type: list[str] | None = None, evidence_level: str | None = None, limit: int = 20):
-        retriever = KBSearchRetriever()
-        result = retriever.search(query, book_id=book_id, card_types=card_type, evidence_level=evidence_level, limit=limit)
+    def search_kb(
+        query: str,
+        book_id: str | None = None,
+        card_type: list[str] | None = None,
+        evidence_level: str | None = None,
+        limit: int | None = None,
+        collection: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ):
+        retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
+        result = retriever.search(
+            query,
+            book_id=book_id,
+            card_types=card_type,
+            evidence_level=evidence_level,
+            limit=limit,
+            collection=collection,
+        )
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
     @app.command("audit-rules")
     def audit_rules(rules_path: Path = Path("data/processed/corpus/sample_rules.json"), kb_root: Path | None = None):
+        settings = get_settings()
         rules = _load_json(rules_path)
         if not isinstance(rules, list):
             raise typer.BadParameter("rules file must be a JSON array")
@@ -188,7 +228,7 @@ if typer:
                 report["missing_evidence"] += 1
                 report["details"].append({"rule_id": rule_id, "status": "missing_evidence"})
                 continue
-            resolved = resolve_evidence(evidence, kb_root)
+            resolved = resolve_evidence(evidence, kb_root or settings.kb_sources_root)
             status = resolved.get("status", "unknown")
             if status == "citable":
                 report["citable"] += 1
@@ -211,7 +251,10 @@ def _main_fallback():  # pragma: no cover
     p_inspect.add_argument("--book-id")
     p_inspect.add_argument("--card-type", action="append")
     p_inspect.add_argument("--evidence-level")
-    p_inspect.add_argument("--limit", type=int, default=20)
+    p_inspect.add_argument("--limit", type=int, default=None)
+    p_inspect.add_argument("--collection")
+    p_inspect.add_argument("--base-url")
+    p_inspect.add_argument("--api-key")
     p_inspect.add_argument("--show-raw", action="store_true")
 
     p_resolve = sub.add_parser("resolve-evidence")
@@ -233,6 +276,9 @@ def _main_fallback():  # pragma: no cover
             args.evidence_level,
             args.limit,
             args.show_raw,
+            args.base_url,
+            args.api_key,
+            args.collection,
         )
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "resolve-evidence":

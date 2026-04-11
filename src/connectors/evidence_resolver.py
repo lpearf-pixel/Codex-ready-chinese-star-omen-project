@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from src.config.settings import get_settings
 from src.connectors.kb_contract import can_be_final_fact, resolve_evidence_level
 
 
 def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None) -> dict[str, Any]:
+    settings = get_settings()
     card_type = evidence.get("card_type")
     inferred_level = resolve_evidence_level(card_type) if card_type else None
 
@@ -18,7 +20,7 @@ def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None
         "locator": evidence.get("locator"),
         "anchor_heading": evidence.get("anchor_heading"),
         "quote": evidence.get("quote"),
-        "ingest_source": evidence.get("ingest_source", "obsidian"),
+        "ingest_source": evidence.get("ingest_source", settings.kb_obsidian_ingest_source_label),
         "source_type": evidence.get("source_type", "docs"),
         "evidence_level": evidence.get("evidence_level") or inferred_level,
         "final_citable": can_be_final_fact(card_type) if card_type else False,
@@ -26,12 +28,13 @@ def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None
     }
 
     relative_path = evidence.get("relative_path")
-    if kb_root and relative_path:
-        full_path = (Path(kb_root) / relative_path).resolve()
+    effective_kb_root = Path(kb_root) if kb_root else Path(settings.kb_sources_root)
+    if relative_path:
+        full_path = (effective_kb_root / relative_path).resolve()
         resolved["resolved_path"] = str(full_path)
         resolved["path_exists"] = full_path.exists()
     else:
-        resolved["resolved_path"] = relative_path
+        resolved["resolved_path"] = None
         resolved["path_exists"] = None
 
     has_minimum_primary_fields = bool(resolved.get("relative_path") and resolved.get("locator") and resolved.get("quote"))
@@ -48,5 +51,6 @@ def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None
         "resolver_version": "m0",
         "requires_primary_card_types": ["fenjuan", "fulltext"],
         "primary_projection_ready": has_minimum_primary_fields,
+        "source_root_label": settings.kb_obsidian_source_root_label,
     }
     return resolved

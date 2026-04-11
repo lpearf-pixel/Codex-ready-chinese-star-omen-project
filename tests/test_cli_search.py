@@ -37,3 +37,17 @@ def test_search_kb_command(monkeypatch):
     )
     assert result.exit_code == 0
     assert json.loads(result.stdout)["hits"][0]["id"] == "x1"
+
+
+def test_cli_limit_overrides_env(monkeypatch):
+    monkeypatch.setenv("APP_DEFAULT_LIMIT", "8")
+
+    def fake_two_stage(self, query, **kwargs):
+        assert kwargs["limit"] == 3
+        return {"stage1": {"hits": []}, "stage2": {"hits": []}}
+
+    monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect-kb", "--query", "荧惑守心", "--limit", "3"])
+    assert result.exit_code == 0

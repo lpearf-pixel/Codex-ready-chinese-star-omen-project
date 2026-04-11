@@ -28,12 +28,13 @@ def test_retrieve_request_payload(monkeypatch):
         return {"hits": []}
 
     monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
-    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k", default_collection="local_kb_default")
     r.retrieve("荧惑", book_id="kaiyuan_zhanjing", card_types=["term_card"], evidence_level="structured", limit=5)
     assert captured["method"] == "POST"
     assert captured["path"] == "/v1/retrieve"
     assert captured["use_auth"] is True
     assert captured["payload"]["filters"]["book_id"] == "kaiyuan_zhanjing"
+    assert captured["payload"]["collection"] == "local_kb_default"
 
 
 def test_api_key_required():

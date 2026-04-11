@@ -39,17 +39,34 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-## 接口配置
+## 配置与环境变量
 
-外部对接接口统一放在配置文件 `config/app_config.yaml`：
+本项目已改为**环境变量驱动**，统一由 `src/config/settings.py` 读取。`KB_SEARCH_BASE_URL` 存在时优先使用；否则回退到 `http://127.0.0.1:${KB_SEARCH_API_PORT}`。
 
-```yaml
-kb_search:
-  base_url: "http://localhost:8008"
-  timeout_seconds: 10
-```
+常用变量（完整示例见 `.env.example` / `.env.test.example`）：
 
-`KBSearchRetriever` 默认读取该配置，避免在代码中硬编码接口地址。
+- `KB_SEARCH_BASE_URL`
+- `KB_SEARCH_API_PORT`
+- `KB_SEARCH_API_KEY`
+- `KB_SEARCH_DEFAULT_COLLECTION`
+- `KB_SEARCH_TIMEOUT_SECONDS`
+- `KB_SOURCES_ROOT`
+- `KB_ENABLE_OBSIDIAN_SOURCE`
+- `KB_OBSIDIAN_ROOT`
+- `KB_OBSIDIAN_INGEST_SOURCE_LABEL`
+- `KB_OBSIDIAN_SOURCE_ROOT_LABEL`
+- `APP_ENV`
+- `APP_DEBUG`
+- `APP_LOG_LEVEL`
+- `APP_TIMEZONE`
+- `APP_DEFAULT_LIMIT`
+- `ASTRO_DEFAULT_EPOCH`
+- `ASTRO_DEFAULT_LON`
+- `ASTRO_DEFAULT_LAT`
+- `ASTRO_DEFAULT_LOCATION_NAME`
+- `ASTRO_VISIBILITY_MIN_ALT_DEG`
+
+> 安全提示：日志会对 API key 做脱敏显示，不会打印完整密钥。
 
 ## 测试手册（README 版）
 

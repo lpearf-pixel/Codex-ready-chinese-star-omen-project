@@ -1,21 +1,33 @@
-from pathlib import Path
-
-from src.config import load_kb_search_config
+from src.config.settings import SettingsError, load_settings, require_api_key
 
 
-def test_load_kb_search_config_from_file(tmp_path: Path):
-    cfg_file = tmp_path / "app_config.yaml"
-    cfg_file.write_text(
-        "kb_search:\n  base_url: 'http://localhost:9001'\n  timeout_seconds: 3\n",
-        encoding="utf-8",
-    )
-
-    cfg = load_kb_search_config(cfg_file)
-    assert cfg.base_url == "http://localhost:9001"
-    assert cfg.timeout_seconds == 3.0
+def test_base_url_priority(monkeypatch):
+    monkeypatch.setenv("KB_SEARCH_BASE_URL", "http://localhost:9999")
+    monkeypatch.setenv("KB_SEARCH_API_PORT", "8008")
+    s = load_settings()
+    assert s.kb_search_effective_base_url == "http://localhost:9999"
 
 
-def test_load_kb_search_config_defaults_when_missing(tmp_path: Path):
-    cfg = load_kb_search_config(tmp_path / "missing.yaml")
-    assert cfg.base_url == "http://127.0.0.1:8008"
-    assert cfg.timeout_seconds == 10.0
+def test_port_fallback_when_base_url_missing(monkeypatch):
+    monkeypatch.delenv("KB_SEARCH_BASE_URL", raising=False)
+    monkeypatch.setenv("KB_SEARCH_API_PORT", "8011")
+    s = load_settings()
+    assert s.kb_search_effective_base_url == "http://127.0.0.1:8011"
+
+
+def test_require_api_key_raises_when_missing(monkeypatch):
+    monkeypatch.delenv("KB_SEARCH_API_KEY", raising=False)
+    s = load_settings()
+    try:
+        require_api_key(s)
+        raise AssertionError("expected SettingsError")
+    except SettingsError as exc:
+        assert "KB_SEARCH_API_KEY" in str(exc)
+
+
+def test_monkeypatch_env_injection(monkeypatch):
+    monkeypatch.setenv("APP_DEFAULT_LIMIT", "13")
+    monkeypatch.setenv("KB_SEARCH_TIMEOUT_SECONDS", "9")
+    s = load_settings()
+    assert s.app_default_limit == 13
+    assert s.kb_search_timeout_seconds == 9.0
