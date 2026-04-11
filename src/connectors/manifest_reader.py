@@ -15,7 +15,7 @@ class ManifestReader:
         manifest_name = manifest_ref.split(":", 1)[1]
         path = self.root / "manifests" / f"{manifest_name}.json"
         if not path.exists():
-            raise FileNotFoundError(path)
+            return {"manifest_found": False, "manifest_name": manifest_name, "path": str(path)}
         return json.loads(path.read_text(encoding="utf-8"))
 
     def inspect(self) -> dict[str, list[str]]:
@@ -23,3 +23,8 @@ class ManifestReader:
         if not manifests_dir.exists():
             return {"manifests": []}
         return {"manifests": sorted(p.name for p in manifests_dir.glob("*.json"))}
+
+    def inspect_root(self) -> dict[str, Any]:
+        exists = self.root.exists()
+        manifests = self.inspect()["manifests"] if exists else []
+        return {"root_exists": exists, "root": str(self.root), "manifests": manifests}

@@ -17,5 +17,5 @@ def test_load_kb_search_config_from_file(tmp_path: Path):
 
 def test_load_kb_search_config_defaults_when_missing(tmp_path: Path):
     cfg = load_kb_search_config(tmp_path / "missing.yaml")
-    assert cfg.base_url == "http://localhost:8008"
+    assert cfg.base_url == "http://127.0.0.1:8008"
     assert cfg.timeout_seconds == 10.0

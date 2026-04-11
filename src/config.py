@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for restricted env
 
 @dataclass
 class KBSearchConfig:
-    base_url: str = "http://localhost:8008"
+    base_url: str = f"http://127.0.0.1:{os.getenv('KB_SEARCH_API_PORT', '8008')}"
     timeout_seconds: float = 10.0
 
 
@@ -48,6 +49,6 @@ def load_kb_search_config(path: Path = DEFAULT_CONFIG_PATH) -> KBSearchConfig:
     raw = load_app_config(path)
     section = raw.get("kb_search", {})
     return KBSearchConfig(
-        base_url=section.get("base_url", "http://localhost:8008"),
+        base_url=section.get("base_url", f"http://127.0.0.1:{os.getenv('KB_SEARCH_API_PORT', '8008')}"),
         timeout_seconds=float(section.get("timeout_seconds", 10.0)),
     )

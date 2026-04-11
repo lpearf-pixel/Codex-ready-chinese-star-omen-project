@@ -131,6 +131,56 @@ python -m src.cli resolve-evidence \
 python -m src.cli audit-rules --rules-path data/processed/corpus/sample_rules.json --kb-root /data/obsidian-kb
 ```
 
+## 本地联调（kb-search 对接）
+
+### 1) 启动 kb-search
+
+```bash
+make up
+```
+
+### 2) 确保知识已入库
+
+```bash
+make ingest
+```
+
+### 3) 健康检查示例
+
+```bash
+python - <<'PY'
+from src.connectors.kb_search_retriever import KBSearchRetriever
+print(KBSearchRetriever().health())
+PY
+```
+
+### 4) inspect-kb 调用示例
+
+```bash
+export KB_SEARCH_API_KEY=your_key
+python -m src.cli inspect-kb \
+  --query "荧惑守心" \
+  --book-id kaiyuan_zhanjing \
+  --card-type term_card \
+  --evidence-level structured \
+  --limit 10 \
+  --show-raw
+```
+
+### 5) resolve-evidence 调用示例
+
+```bash
+python -m src.cli resolve-evidence \
+  --rule data/processed/corpus/sample_rules.json \
+  --show-json
+```
+
+### 6) 常见报错与排查
+
+- `Missing API key`：未设置 `KB_SEARCH_API_KEY`，请先 `export KB_SEARCH_API_KEY=...`。
+- `Connection refused`：kb-search 未启动或端口不对，检查 `make up` 和 `KB_SEARCH_API_PORT`。
+- 只有 `structured_hits` 没有 `primary_hits`：当前只能作为“线索/候选解释”，不可作为最终事实证据。
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`
@@ -138,6 +188,6 @@ python -m src.cli audit-rules --rules-path data/processed/corpus/sample_rules.js
 
 ### 最新测试结论（2026-04-11）
 
-- `pytest -q`：**8 passed, 5 skipped**
-- `python -m src.cli validate-data`：当前容器缺少 `typer`，因此命令失败
+- `pytest -q`：**14 passed, 4 skipped**
+- `python -m src.cli validate-data`：成功
 - 建议在本地 Python 3.12 虚拟环境复现测试流程（详见 `docs/test_report.md`）

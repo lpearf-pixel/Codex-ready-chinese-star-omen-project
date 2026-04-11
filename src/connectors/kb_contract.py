@@ -40,6 +40,18 @@ PROOF_PRIORITY: list[CardType] = [
 ]
 
 FINAL_CITABLE_CARD_TYPES: set[CardType] = {CardType.FENJUAN, CardType.FULLTEXT}
+NON_FACTUAL_CARD_TYPES: set[CardType] = {CardType.PROMPT_ASSET, CardType.QA_EXAMPLE}
+
+STAGE1_RECALL_CARD_TYPES: list[CardType] = [
+    CardType.XINGGUAN_CARD,
+    CardType.ZHUSU_CARD,
+    CardType.TERM_CARD,
+    CardType.EXTRACT_CARD,
+    CardType.TOPIC_INDEX,
+    CardType.CHAPTER_SUMMARY,
+]
+
+STAGE2_PRIMARY_CARD_TYPES: list[CardType] = [CardType.FENJUAN, CardType.FULLTEXT]
 
 CARD_TYPE_TO_EVIDENCE_LEVEL: dict[CardType, EvidenceLevel] = {
     CardType.FENJUAN: EvidenceLevel.PRIMARY,
@@ -68,3 +80,11 @@ def resolve_evidence_level(card_type: str) -> str | None:
         return CARD_TYPE_TO_EVIDENCE_LEVEL[CardType(card_type)].value
     except ValueError:
         return None
+
+
+def can_be_final_fact(card_type: str) -> bool:
+    try:
+        ct = CardType(card_type)
+    except ValueError:
+        return False
+    return ct in FINAL_CITABLE_CARD_TYPES and ct not in NON_FACTUAL_CARD_TYPES

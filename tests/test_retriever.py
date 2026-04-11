@@ -1,68 +1,67 @@
-import pytest
-
-pytest.importorskip("httpx")
-
-from src.connectors.kb_search_retriever import KBSearchRetriever
+from src.connectors.kb_search_retriever import KBSearchError, KBSearchRetriever
 
 
-class DummyResponse:
-    def raise_for_status(self):
-        return None
+def test_health_calls_health_endpoint(monkeypatch):
+    called = {}
 
-    def json(self):
-        return {"hits": [{"id": "n1"}]}
+    def fake_request(self, method, path, **kwargs):
+        called["method"] = method
+        called["path"] = path
+        return {"ok": True}
 
-
-class DummyClient:
-    def __init__(self, timeout):
-        self.timeout = timeout
-        self.payload = None
-        self.last_url = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def post(self, url, json):
-        self.last_url = url
-        self.payload = json
-        assert url.endswith("/kb-search")
-        return DummyResponse()
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.health()
+    assert out["ok"] is True
+    assert called["method"] == "GET"
+    assert called["path"] == "/v1/health"
 
 
-def test_kb_search_payload_filters(monkeypatch):
-    created = {}
+def test_retrieve_request_payload(monkeypatch):
+    captured = {}
 
-    def _client(timeout):
-        cli = DummyClient(timeout)
-        created["cli"] = cli
-        return cli
+    def fake_request(self, method, path, **kwargs):
+        captured["method"] = method
+        captured["path"] = path
+        captured["payload"] = kwargs["json_payload"]
+        captured["use_auth"] = kwargs["use_auth"]
+        return {"hits": []}
 
-    monkeypatch.setattr("src.connectors.kb_search_retriever.httpx.Client", _client)
-    r = KBSearchRetriever("http://localhost:9000")
-    out = r.search("荧惑", book_id="kaiyuan_zhanjing", card_types=["term_card"], evidence_level="structured")
-    assert out["hits"][0]["id"] == "n1"
-    assert created["cli"].payload["filters"]["book_id"] == "kaiyuan_zhanjing"
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    r.retrieve("荧惑", book_id="kaiyuan_zhanjing", card_types=["term_card"], evidence_level="structured", limit=5)
+    assert captured["method"] == "POST"
+    assert captured["path"] == "/v1/retrieve"
+    assert captured["use_auth"] is True
+    assert captured["payload"]["filters"]["book_id"] == "kaiyuan_zhanjing"
 
 
-def test_kb_search_uses_config_default_url(monkeypatch):
-    created = {}
+def test_api_key_required():
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key=None)
+    try:
+        r._auth_headers()
+        raise AssertionError("expected error")
+    except KBSearchError as exc:
+        assert "KB_SEARCH_API_KEY" in str(exc)
 
-    def _client(timeout):
-        cli = DummyClient(timeout)
-        created["cli"] = cli
-        return cli
 
-    class Cfg:
-        base_url = "http://localhost:8008"
-        timeout_seconds = 5.0
+def test_api_key_headers_shape():
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="abc")
+    headers = r._auth_headers()
+    assert headers["Authorization"] == "Bearer abc"
+    assert headers["X-API-Key"] == "abc"
 
-    monkeypatch.setattr("src.connectors.kb_search_retriever.httpx.Client", _client)
-    monkeypatch.setattr("src.connectors.kb_search_retriever.load_kb_search_config", lambda: Cfg())
 
-    r = KBSearchRetriever()
-    r.search("荧惑")
-    assert created["cli"].timeout == 5.0
-    assert created["cli"].last_url == "http://localhost:8008/kb-search"
+def test_two_stage_retrieve(monkeypatch):
+    calls = []
+
+    def fake_retrieve(self, query, **kwargs):
+        calls.append(kwargs)
+        return {"hits": []}
+
+    monkeypatch.setattr(KBSearchRetriever, "retrieve", fake_retrieve)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.two_stage_retrieve("荧惑守心", book_id="kaiyuan_zhanjing", limit=3)
+    assert "stage1" in out and "stage2" in out
+    assert calls[0]["card_types"] == ["xingguan_card", "zhusu_card", "term_card", "extract_card", "topic_index", "chapter_summary"]
+    assert calls[1]["card_types"] == ["fenjuan", "fulltext"]
