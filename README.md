@@ -41,7 +41,7 @@ pip install -e .
 
 ## 配置与环境变量
 
-本项目已改为**环境变量驱动**，统一由 `src/config/settings.py` 读取。`KB_SEARCH_BASE_URL` 存在时优先使用；否则回退到 `http://127.0.0.1:${KB_SEARCH_API_PORT}`。
+本项目已改为**环境变量驱动**，统一由 `src/config/settings.py` 读取。默认配置文件为 `config/config.yaml`（可用 `APP_CONFIG_PATH` 覆盖），并支持 `${VAR}` / `${VAR:-default}` 插值。`KB_SEARCH_BASE_URL` 存在时优先使用；否则回退到 `http://127.0.0.1:${KB_SEARCH_API_PORT}`。
 
 常用变量（完整示例见 `.env.example` / `.env.test.example`）：
 

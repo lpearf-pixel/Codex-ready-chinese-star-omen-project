@@ -1,3 +1,0 @@
-kb_search:
-  base_url: "http://127.0.0.1:8008"
-  timeout_seconds: 10
