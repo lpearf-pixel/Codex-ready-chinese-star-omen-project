@@ -37,6 +37,18 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+## 接口配置
+
+外部对接接口统一放在配置文件 `config/app_config.yaml`：
+
+```yaml
+kb_search:
+  base_url: "http://localhost:8008"
+  timeout_seconds: 10
+```
+
+`KBSearchRetriever` 默认读取该配置，避免在代码中硬编码接口地址。
+
 ## 测试手册（README 版）
 
 ### 1) 运行单元测试
@@ -69,6 +81,6 @@ python -m src.cli resolve-evidence --rule data/processed/corpus/sample_rule_one.
 
 ### 最新测试结论（2026-04-11）
 
-- `pytest -q`：**6 passed, 2 skipped**
+- `pytest -q`：**8 passed, 2 skipped**
 - `python -m src.cli validate-data`：当前容器缺少 `typer`，因此命令失败
 - 建议在本地 Python 3.12 虚拟环境复现测试流程（详见 `docs/test_report.md`）

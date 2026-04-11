@@ -4,11 +4,14 @@ from typing import Any
 
 import httpx
 
+from src.config import load_kb_search_config
+
 
 class KBSearchRetriever:
-    def __init__(self, base_url: str = "http://localhost:8080", timeout: float = 10.0) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
+    def __init__(self, base_url: str | None = None, timeout: float | None = None) -> None:
+        cfg = load_kb_search_config()
+        self.base_url = (base_url or cfg.base_url).rstrip("/")
+        self.timeout = timeout if timeout is not None else cfg.timeout_seconds
 
     def search(
         self,
