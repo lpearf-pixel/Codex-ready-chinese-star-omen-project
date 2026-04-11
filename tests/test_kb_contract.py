@@ -16,18 +16,22 @@ def test_resolve_evidence_level():
 
 
 def test_infer_zhusu_card_from_path():
-    meta = infer_metadata_from_path("docs/kaiyuan_zhanjing/逐宿卡/心宿.md")
+    meta = infer_metadata_from_path("/docs/古籍/唐開元占經/逐宿卡/心宿.md")
+    assert meta["book_title"] == "唐開元占經"
+    assert meta["book_id"] == "kaiyuan_zhanjing"
     assert meta["card_type"] == "zhusu_card"
     assert meta["evidence_level"] == "structured"
 
 
 def test_infer_fenjuan_from_path():
-    meta = infer_metadata_from_path("docs/kaiyuan_zhanjing/分卷/卷十二.md")
+    meta = infer_metadata_from_path("/docs/古籍/唐開元占經/分卷/卷十二.md")
+    assert meta["book_id"] == "kaiyuan_zhanjing"
     assert meta["card_type"] == "fenjuan"
     assert meta["evidence_level"] == "primary"
 
 
 def test_infer_fulltext_from_path():
-    meta = infer_metadata_from_path("docs/kaiyuan_zhanjing/全文合併版.md")
+    meta = infer_metadata_from_path("/docs/古籍/唐開元占經/全文合併版.md")
+    assert meta["book_id"] == "kaiyuan_zhanjing"
     assert meta["card_type"] == "fulltext"
     assert meta["evidence_level"] == "primary"

@@ -17,14 +17,17 @@ def test_inspect_kb_with_query_filters(monkeypatch, tmp_path):
         assert kwargs["book_id"] == "kaiyuan_zhanjing"
         return {
             "stage1": {
-                "raw_hits": [{"id": "n1", "path": "docs/kaiyuan_zhanjing/术语卡片/守.md"}],
-                "inferred_hits": [{"id": "n1", "card_type": "term_card", "evidence_level": "structured"}],
-                "hits": [{"id": "n1", "card_type": "term_card", "evidence_level": "structured"}],
+                "raw_hits": [{"id": "n1", "path": "/docs/古籍/唐開元占經/术语卡片/守.md"}],
+                "inferred_hits": [{"id": "n1", "book_title": "唐開元占經", "book_id": "kaiyuan_zhanjing", "card_type": "term_card", "evidence_level": "structured"}],
+                "exact_hits": [{"id": "n1", "card_type": "term_card"}],
+                "related_hits": [],
+                "hits": [{"id": "n1", "book_title": "唐開元占經", "book_id": "kaiyuan_zhanjing", "card_type": "term_card", "evidence_level": "structured"}],
             },
             "stage2": {
-                "raw_hits": [{"id": "n2", "path": "docs/kaiyuan_zhanjing/分卷/卷十二.md"}],
+                "raw_hits": [{"id": "n2", "path": "/docs/古籍/唐開元占經/分卷/卷十二.md"}],
                 "inferred_hits": [{"id": "n2", "card_type": "fenjuan", "evidence_level": "primary"}],
                 "hits": [{"id": "n2", "card_type": "fenjuan", "evidence_level": "primary"}],
+                "primary_candidates": [{"id": "n2", "card_type": "fenjuan", "evidence_level": "primary"}],
             },
         }
 
@@ -46,10 +49,10 @@ def test_inspect_kb_with_query_filters(monkeypatch, tmp_path):
     assert result.exit_code == 0
     body = json.loads(result.stdout)
     assert body["mode"] == "search"
-    assert body["stage1"]["raw_hits"][0]["id"] == "n1"
-    assert body["stage1"]["inferred_hits"][0]["card_type"] == "term_card"
-    assert body["stage1"]["filtered_hits"][0]["id"] == "n1"
-    assert body["stage2"]["primary_hits"][0]["id"] == "n2"
+    assert body["book_title"] == "唐開元占經"
+    assert body["book_id"] == "kaiyuan_zhanjing"
+    assert body["exact_hits"][0]["id"] == "n1"
+    assert body["primary_candidates"][0]["id"] == "n2"
 
 
 def test_resolve_evidence_output_contains_required_fields(tmp_path):

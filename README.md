@@ -176,6 +176,8 @@ PY
 
 > 注意：当前 `card_type` / `evidence_level` 并非来自 kb-search 原始字段，而是基于返回 `path` 在本地推断得到。
 
+> 另外，`inspect-kb` 已启用本地 rerank（标题/文件名精确匹配优先），短词查询（如“心宿”）会优先精确命中并下调相似宿名结果。
+
 ```bash
 export KB_SEARCH_API_KEY=your_key
 python -m src.cli inspect-kb \

@@ -88,6 +88,14 @@ PATH_CARD_TYPE_RULES: list[tuple[str, str]] = [
 ]
 
 
+BOOK_TITLE_TO_ID: dict[str, str] = {
+    "唐開元占經": "kaiyuan_zhanjing",
+    "唐开元占经": "kaiyuan_zhanjing",
+    "開元占經": "kaiyuan_zhanjing",
+    "开元占经": "kaiyuan_zhanjing",
+}
+
+
 def is_final_citable(card_type: str) -> bool:
     try:
         return CardType(card_type) in FINAL_CITABLE_CARD_TYPES
@@ -110,16 +118,22 @@ def can_be_final_fact(card_type: str) -> bool:
     return ct in FINAL_CITABLE_CARD_TYPES and ct not in NON_FACTUAL_CARD_TYPES
 
 
-def infer_book_id_from_path(path: str | None) -> str | None:
+def infer_book_title_from_path(path: str | None) -> str | None:
     if not path:
         return None
     normalized = path.replace("\\", "/")
     parts = [p for p in normalized.split("/") if p]
-    if "docs" in parts:
-        idx = parts.index("docs")
-        if idx + 1 < len(parts):
+    for idx, token in enumerate(parts):
+        if token == "古籍" and idx + 1 < len(parts):
             return parts[idx + 1]
-    return parts[0] if parts else None
+    return None
+
+
+def infer_book_id_from_path(path: str | None) -> str | None:
+    title = infer_book_title_from_path(path)
+    if title:
+        return BOOK_TITLE_TO_ID.get(title)
+    return None
 
 
 def infer_card_type_from_path(path: str | None) -> str | None:
@@ -135,6 +149,7 @@ def infer_card_type_from_path(path: str | None) -> str | None:
 def infer_metadata_from_path(path: str | None) -> dict[str, str | None]:
     card_type = infer_card_type_from_path(path)
     return {
+        "book_title": infer_book_title_from_path(path),
         "book_id": infer_book_id_from_path(path),
         "card_type": card_type,
         "evidence_level": resolve_evidence_level(card_type) if card_type else None,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 try:
@@ -91,12 +92,51 @@ class KBSearchRetriever:
             inferred_hits.append(
                 {
                     **hit,
+                    "book_title": inferred.get("book_title"),
                     "book_id": inferred.get("book_id"),
                     "card_type": inferred.get("card_type"),
                     "evidence_level": inferred.get("evidence_level"),
                 }
             )
         return inferred_hits
+
+    @staticmethod
+    def _rank_hit(query: str, hit: dict[str, Any]) -> int:
+        query_norm = query.strip().lower()
+        title = str(hit.get("title") or "").strip()
+        title_norm = title.lower()
+        snippet = str(hit.get("snippet") or "")
+        path = str(hit.get("path") or "")
+        basename = Path(path.replace("\\", "/")).stem.lower()
+
+        score = 0
+        if title_norm == query_norm:
+            score += 100
+        if basename == query_norm:
+            score += 90
+        if f"# {query}" in snippet or f"【{query}】" in snippet or f"《{query}》" in snippet:
+            score += 80
+        if query_norm and query_norm in title_norm:
+            score += 30
+        if query_norm and query_norm in basename:
+            score += 30
+        score += int(float(hit.get("score") or 0) * 10)
+        return score
+
+    @classmethod
+    def _rerank_hits(cls, query: str, inferred_hits: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+        ranked = [{**h, "_rank": cls._rank_hit(query, h)} for h in inferred_hits]
+        ranked.sort(key=lambda x: x.get("_rank", 0), reverse=True)
+        exact_hits = [h for h in ranked if h.get("_rank", 0) >= 90]
+        related_hits = [h for h in ranked if h.get("_rank", 0) < 90]
+
+        # 精确优先：短 query 且存在精确命中时，仅保留少量 related
+        is_short_query = len(query.strip()) <= 4
+        if is_short_query and exact_hits:
+            ordered = exact_hits + related_hits[:3]
+        else:
+            ordered = ranked
+        return ordered, exact_hits, related_hits
 
     @staticmethod
     def _apply_local_filters(
@@ -137,8 +177,9 @@ class KBSearchRetriever:
         raw_result = self._request("POST", "/v1/retrieve", json_payload=payload, use_auth=True)
         raw_hits = raw_result.get("hits", [])
         inferred_hits = self._normalize_hits(raw_hits)
+        reranked, exact_hits, related_hits = self._rerank_hits(query, inferred_hits)
         filtered_hits = self._apply_local_filters(
-            inferred_hits,
+            reranked,
             book_id=book_id,
             card_types=card_types,
             evidence_level=evidence_level,
@@ -147,6 +188,8 @@ class KBSearchRetriever:
             **raw_result,
             "raw_hits": raw_hits,
             "inferred_hits": inferred_hits,
+            "exact_hits": exact_hits,
+            "related_hits": related_hits,
             "hits": filtered_hits,
         }
 
@@ -201,12 +244,21 @@ class KBSearchRetriever:
             limit=limit,
             collection=collection,
         )
+
+        primary_query = query
+        if stage1.get("exact_hits"):
+            top_exact = stage1["exact_hits"][0]
+            primary_query = str(top_exact.get("title") or Path(str(top_exact.get("path") or "")).stem or query)
+
         stage2 = self.retrieve(
-            query,
+            primary_query,
             book_id=book_id,
             card_types=["fenjuan", "fulltext"],
             evidence_level="primary",
             limit=limit,
             collection=collection,
         )
+
+        stage2["primary_candidates"] = stage2.get("hits", [])
+        stage2["only_structured_no_primary"] = bool(stage1.get("hits")) and not bool(stage2.get("hits"))
         return {"stage1": stage1, "stage2": stage2}

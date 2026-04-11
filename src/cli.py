@@ -55,9 +55,12 @@ def _split_hits(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "raw_hits": result.get("raw_hits", []),
         "inferred_hits": result.get("inferred_hits", []),
+        "exact_hits": result.get("exact_hits", []),
+        "related_hits": result.get("related_hits", []),
         "filtered_hits": filtered_hits,
         "structured_hits": structured,
         "primary_hits": primary,
+        "primary_candidates": result.get("primary_candidates", []),
     }
 
 
@@ -100,12 +103,20 @@ def inspect_kb_impl(
             stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
             stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
 
+        stage1_out = _split_hits(stage.get("stage1", {}))
+        stage2_out = _split_hits(stage.get("stage2", {}))
+        top_hit = (stage1_out.get("filtered_hits") or stage1_out.get("inferred_hits") or [None])[0]
         out = {
             "mode": "search",
             "query": query,
             "root": str(root) if root else None,
-            "stage1": _split_hits(stage.get("stage1", {})),
-            "stage2": _split_hits(stage.get("stage2", {})),
+            "book_title": top_hit.get("book_title") if isinstance(top_hit, dict) else None,
+            "book_id": top_hit.get("book_id") if isinstance(top_hit, dict) else None,
+            "exact_hits": stage1_out.get("exact_hits", []),
+            "related_hits": stage1_out.get("related_hits", []),
+            "primary_candidates": stage2_out.get("primary_candidates", []),
+            "stage1": stage1_out,
+            "stage2": stage2_out,
             "note": "if no primary hits, output should be treated as clue/candidate explanation only",
         }
         if show_raw:
