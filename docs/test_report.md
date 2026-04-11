@@ -19,7 +19,7 @@ python -m src.cli validate-data
 
 ## 3. 结果摘要
 
-- `pytest -q`：**8 passed, 4 skipped**
+- `pytest -q`：**8 passed, 5 skipped**
 - `python -m src.cli validate-data`：在当前容器中失败（缺少 `typer` 依赖）
 
 ## 4. 已覆盖能力
@@ -32,6 +32,8 @@ python -m src.cli validate-data
 6. **配置读取**：`config/app_config.yaml` 中 `kb_search.base_url/timeout_seconds` 可被加载并用于默认检索配置。
 7. **CLI 检索命令**：`search-kb` 命令参数传递与输出序列化。
 8. **CLI 规则审计命令**：`audit-rules` 对规则证据链进行批量状态统计（`citable/candidate_only/missing_evidence`）。
+9. **CLI 参数联调**：`inspect-kb` 支持 `--root/--query/--book-id/--card-type/--evidence-level` 参数解析。
+10. **证据回链字段**：`resolve-evidence` 输出 `relative_path/locator/quote/card_type/evidence_level`。
 
 ## 5. 风险与建议
 

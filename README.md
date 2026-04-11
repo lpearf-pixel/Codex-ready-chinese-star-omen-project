@@ -18,8 +18,8 @@
 - Connector 接入层：`kb-search` 检索、manifest 读取、证据解析回链
 - CLI 命令：
   - `python -m src.cli validate-data`
-  - `python -m src.cli inspect-kb --root <path>`
-  - `python -m src.cli resolve-evidence --rule <path>`
+  - `python -m src.cli inspect-kb --root <path> [--query ...]`
+  - `python -m src.cli resolve-evidence --rule <path> [--kb-root ...]`
   - `python -m src.cli search-kb "<query>" --book-id <book_id>`
   - `python -m src.cli audit-rules --rules-path <rules.json>`
 - 样例数据：星官样例、规则样例、外部知识库契约样例
@@ -71,6 +71,18 @@ python -m src.cli validate-data
 python -m src.cli inspect-kb --root <你的知识库根目录>
 ```
 
+按查询条件联调 `kb-search`：
+
+```bash
+python -m src.cli inspect-kb \
+  --root /data/obsidian-kb \
+  --query "荧惑守心" \
+  --book-id kaiyuan_zhanjing \
+  --card-type term_card \
+  --card-type extract_card \
+  --evidence-level structured
+```
+
 ### 4) 解析单条规则中的证据链
 
 ```bash
@@ -89,12 +101,43 @@ python -m src.cli search-kb "荧惑守心" --book-id kaiyuan_zhanjing --card-typ
 python -m src.cli audit-rules --rules-path data/processed/corpus/sample_rules.json
 ```
 
+## 本地联调命令（开元占经）
+
+> 以下命令用于与你本地《开元占经》知识库联调（M0 阶段）。
+
+1) 用 `inspect-kb` 通过检索条件召回候选卡片：
+
+```bash
+python -m src.cli inspect-kb \
+  --root /data/obsidian-kb \
+  --query "荧惑守心" \
+  --book-id kaiyuan_zhanjing \
+  --card-type term_card \
+  --card-type extract_card \
+  --evidence-level structured
+```
+
+2) 对规则执行证据回链（关注 `relative_path/locator/quote/card_type/evidence_level`）：
+
+```bash
+python -m src.cli resolve-evidence \
+  --rule data/processed/corpus/sample_rule_one.json \
+  --kb-root /data/obsidian-kb
+```
+
+3) 批量检查规则是否可直接引用为最终证据：
+
+```bash
+python -m src.cli audit-rules --rules-path data/processed/corpus/sample_rules.json --kb-root /data/obsidian-kb
+```
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`
+- 《开元占经》本地联调示例见：`docs/kaiyuan_integration_example.md`
 
 ### 最新测试结论（2026-04-11）
 
-- `pytest -q`：**8 passed, 4 skipped**
+- `pytest -q`：**8 passed, 5 skipped**
 - `python -m src.cli validate-data`：当前容器缺少 `typer`，因此命令失败
 - 建议在本地 Python 3.12 虚拟环境复现测试流程（详见 `docs/test_report.md`）

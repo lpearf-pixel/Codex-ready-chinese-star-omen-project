@@ -13,6 +13,7 @@ def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None
     resolved: dict[str, Any] = {
         "kb_book_id": evidence.get("kb_book_id"),
         "note_id": evidence.get("note_id"),
+        "relative_path": evidence.get("relative_path"),
         "locator": evidence.get("locator"),
         "anchor_heading": evidence.get("anchor_heading"),
         "quote": evidence.get("quote"),

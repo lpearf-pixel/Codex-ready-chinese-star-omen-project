@@ -36,19 +36,49 @@ def validate_data(
 
 
 @app.command("inspect-kb")
-def inspect_kb(root: Path):
+def inspect_kb(
+    root: Path = typer.Option(..., "--root", help="External KB root path"),
+    query: str | None = typer.Option(None, "--query", help="Query text for kb-search"),
+    book_id: str | None = typer.Option(None, "--book-id", help="Filter by book id"),
+    card_type: list[str] | None = typer.Option(None, "--card-type", help="Filter by card type (repeatable)"),
+    evidence_level: str | None = typer.Option(None, "--evidence-level", help="Filter by evidence level"),
+):
+    if query:
+        retriever = KBSearchRetriever()
+        result = retriever.search(
+            query,
+            book_id=book_id,
+            card_types=card_type,
+            evidence_level=evidence_level,
+        )
+        typer.echo(json.dumps({"mode": "search", "root": str(root), "result": result}, ensure_ascii=False, indent=2))
+        return
+
     reader = ManifestReader(root)
-    typer.echo(json.dumps(reader.inspect(), ensure_ascii=False, indent=2))
+    typer.echo(json.dumps({"mode": "manifest", "root": str(root), "result": reader.inspect()}, ensure_ascii=False, indent=2))
 
 
 @app.command("resolve-evidence")
-def resolve_evidence_cmd(rule: Path, kb_root: Path | None = None):
+def resolve_evidence_cmd(
+    rule: Path = typer.Option(..., "--rule", help="Single rule JSON path"),
+    kb_root: Path | None = typer.Option(None, "--kb-root", help="External KB root path"),
+):
     rule_obj = _load_json(rule)
     evidence = rule_obj.get("evidence")
     if not evidence:
         raise typer.BadParameter("rule file has no evidence")
     resolved = resolve_evidence(evidence, kb_root)
-    typer.echo(json.dumps(resolved, ensure_ascii=False, indent=2))
+    payload = {
+        "rule_id": rule_obj.get("id"),
+        "relative_path": resolved.get("relative_path"),
+        "locator": resolved.get("locator"),
+        "quote": resolved.get("quote"),
+        "card_type": resolved.get("card_type"),
+        "evidence_level": resolved.get("evidence_level"),
+        "status": resolved.get("status"),
+        "final_citable": resolved.get("final_citable"),
+    }
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 @app.command("search-kb")
