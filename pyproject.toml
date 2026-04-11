@@ -7,7 +7,7 @@ name = "ancient-chinese-astro-model"
 version = "0.1.0"
 description = "Traceable Chinese traditional astro-omen research engine"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
   "pydantic>=2.6",
   "jsonschema>=4.22",

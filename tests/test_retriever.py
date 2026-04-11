@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("httpx")
+
 from src.connectors.kb_search_retriever import KBSearchRetriever
 
 
