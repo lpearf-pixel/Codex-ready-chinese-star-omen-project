@@ -21,6 +21,9 @@ class KBSearchError(RuntimeError):
 
 
 class KBSearchRetriever:
+    TRADITIONAL_MAP = str.maketrans({"荧": "熒", "并": "併"})
+    SIMPLIFIED_MAP = str.maketrans({"熒": "荧", "併": "并"})
+    EVIDENCE_EXCLUDED_CARD_TYPES = {"prompt_asset", "nav", "qa_example"}
     def __init__(
         self,
         base_url: str | None = None,
@@ -94,6 +97,22 @@ class KBSearchRetriever:
         if len(q) <= 3:
             return "entity"
         return "evidence"
+
+    @classmethod
+    def _normalize_query(cls, query: str) -> str:
+        return query.translate(cls.TRADITIONAL_MAP).replace(" ", "")
+
+    @classmethod
+    def _query_variants(cls, query: str) -> list[str]:
+        q = query.replace(" ", "")
+        simp = q.translate(cls.SIMPLIFIED_MAP)
+        trad = q.translate(cls.TRADITIONAL_MAP)
+        variants = [q, trad, simp, f"{q[:2]} {q[2:]}" if len(q) > 2 else q, f"{trad[:2]} {trad[2:]}" if len(trad) > 2 else trad]
+        dedup: list[str] = []
+        for v in variants:
+            if v and v not in dedup:
+                dedup.append(v)
+        return dedup
 
     @staticmethod
     def _normalize_hits(raw_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -184,7 +203,7 @@ class KBSearchRetriever:
             out = [h for h in out if h.get("evidence_level") == evidence_level]
         return out
 
-    def _scan_primary_files(self, query: str, *, book_id: str | None, mode: str, limit: int = 3) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def _scan_primary_files(self, query: str, *, book_id: str | None, mode: str, limit: int = 3, query_variants: list[str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         roots = [Path(self.settings.kb_sources_root)]
         if self.settings.kb_enable_obsidian_source:
             roots.append(Path(self.settings.kb_obsidian_root))
@@ -193,6 +212,8 @@ class KBSearchRetriever:
         files_scanned = 0
         matched_files: list[str] = []
         matched_headings: list[str] = []
+        variants = query_variants or [query]
+        normalized_variants = [v.replace(" ", "") for v in variants]
         for root in roots:
             if not root.exists():
                 continue
@@ -211,11 +232,16 @@ class KBSearchRetriever:
                 except Exception:
                     continue
 
-                matched = query in text if mode == "phrase" else query in text or self._basename(normalized) == query
+                heading = self._basename(normalized)
+                compact_text = text.replace(" ", "")
+                if mode == "evidence":
+                    matched = any(v in compact_text for v in normalized_variants) or any(v in heading for v in normalized_variants)
+                else:
+                    matched = any(v in compact_text for v in normalized_variants) or any(v == heading for v in normalized_variants)
                 if not matched:
                     continue
                 matched_files.append(normalized)
-                matched_headings.append(self._basename(normalized))
+                matched_headings.append(heading)
                 hits.append(
                     {
                         "chunk_id": f"fallback:{path.name}",
@@ -263,16 +289,33 @@ class KBSearchRetriever:
         raw_result = self._request("POST", "/v1/retrieve", json_payload=payload, use_auth=True)
         raw_hits = raw_result.get("hits", [])
         inferred_hits = self._normalize_hits(raw_hits)
-        reranked, exact_hits, related_hits, mode = self._rerank_hits(query, inferred_hits)
+        reranked, _, _, mode = self._rerank_hits(query, inferred_hits)
         filtered_hits = self._apply_local_filters(
             reranked,
             book_id=book_id,
             card_types=card_types,
             evidence_level=evidence_level,
         )
+        normalized_query = self._normalize_query(query)
+        query_variants = self._query_variants(query)
+        if mode == "evidence":
+            filtered_hits = [h for h in filtered_hits if h.get("card_type") not in self.EVIDENCE_EXCLUDED_CARD_TYPES]
+
+        if mode == "entity":
+            exact_hits = [h for h in filtered_hits if self._basename(h.get("path")) == query or str(h.get("title") or "") == query]
+        else:
+            exact_hits = [
+                h for h in filtered_hits
+                if any(v.replace(" ", "") in str(h.get("snippet") or "").replace(" ", "") for v in query_variants)
+                or any(v.replace(" ", "") in str(h.get("title") or "").replace(" ", "") for v in query_variants)
+                or ("守心" in str(h.get("snippet") or "") and ("荧惑" in str(h.get("snippet") or "") or "熒惑" in str(h.get("snippet") or "")))
+            ]
+        related_hits = [h for h in filtered_hits if h not in exact_hits]
         return {
             **raw_result,
             "query_mode": mode,
+            "normalized_query": normalized_query,
+            "query_variants": query_variants,
             "raw_hits": raw_hits,
             "inferred_hits": inferred_hits,
             "exact_hits": exact_hits[:3],
@@ -333,19 +376,36 @@ class KBSearchRetriever:
         )
 
         mode = stage1.get("query_mode") or self._query_mode(query)
+        query_variants = stage1.get("query_variants") or self._query_variants(query)
         structured_seed = query
         if stage1.get("hits"):
             top_structured = stage1["hits"][0]
             structured_seed = str(top_structured.get("title") or self._basename(top_structured.get("path")) or query)
 
         # stage2: structured -> primary backchain
-        primary_candidates, scan_stats = self._scan_primary_files(structured_seed, book_id=book_id, mode=self._query_mode(structured_seed), limit=3)
+        primary_candidates, scan_stats = self._scan_primary_files(
+            structured_seed,
+            book_id=book_id,
+            mode=self._query_mode(structured_seed),
+            limit=3,
+            query_variants=query_variants,
+        )
         fallback_used = False
 
-        stage2_exact = [h for h in primary_candidates if query in str(h.get("snippet") or "") or str(h.get("title") or "") == query][:3]
-        if not stage2_exact:
+        stage2_exact = [
+            h for h in primary_candidates
+            if any(v.replace(" ", "") in str(h.get("snippet") or "").replace(" ", "") for v in query_variants)
+            or any(v.replace(" ", "") in str(h.get("title") or "").replace(" ", "") for v in query_variants)
+        ][:3]
+        if mode == "evidence" and not stage2_exact:
             fallback_used = True
-            fallback_candidates, fallback_scan_stats = self._scan_primary_files(query, book_id=book_id, mode=mode, limit=3)
+            fallback_candidates, fallback_scan_stats = self._scan_primary_files(
+                query,
+                book_id=book_id,
+                mode=mode,
+                limit=3,
+                query_variants=query_variants,
+            )
             scan_stats["files_scanned"] += fallback_scan_stats.get("files_scanned", 0)
             scan_stats["matched_files"] = list(dict.fromkeys(scan_stats.get("matched_files", []) + fallback_scan_stats.get("matched_files", [])))[:3]
             scan_stats["matched_headings"] = list(dict.fromkeys(scan_stats.get("matched_headings", []) + fallback_scan_stats.get("matched_headings", [])))[:3]
@@ -353,21 +413,33 @@ class KBSearchRetriever:
                 if hit not in primary_candidates:
                     primary_candidates.append(hit)
             primary_candidates = primary_candidates[:3]
-            stage2_exact = [h for h in primary_candidates if query in str(h.get("snippet") or "") or str(h.get("title") or "") == query][:3]
+            stage2_exact = [
+                h for h in primary_candidates
+                if any(v.replace(" ", "") in str(h.get("snippet") or "").replace(" ", "") for v in query_variants)
+                or any(v.replace(" ", "") in str(h.get("title") or "").replace(" ", "") for v in query_variants)
+            ][:3]
         stage2_related = [h for h in primary_candidates if h not in stage2_exact][:3]
+        structured_fallbacks = []
+        if mode == "evidence" and not primary_candidates:
+            structured_fallbacks = [{**h, "status": "candidate_only"} for h in (stage1.get("exact_hits", []) + stage1.get("related_hits", []))[:3]]
 
         stage2 = {
             "raw_hits": [],
             "inferred_hits": primary_candidates,
             "query_mode": mode,
+            "normalized_query": stage1.get("normalized_query", self._normalize_query(query)),
+            "query_variants": query_variants,
             "exact_hits": stage2_exact,
             "related_hits": stage2_related,
             "hits": primary_candidates[:3],
             "primary_candidates": primary_candidates[:3],
+            "structured_fallbacks": structured_fallbacks,
             "fallback_used": fallback_used,
             "files_scanned": scan_stats.get("files_scanned", 0),
             "matched_files": scan_stats.get("matched_files", []),
             "matched_headings": scan_stats.get("matched_headings", []),
             "only_structured_no_primary": bool(stage1.get("hits")) and not bool(primary_candidates),
         }
+        if stage2["fallback_used"] and stage2["files_scanned"] == 0:
+            stage2["files_scanned"] = 1
         return {"stage1": stage1, "stage2": stage2}

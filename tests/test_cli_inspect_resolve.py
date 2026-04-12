@@ -66,7 +66,7 @@ def test_inspect_evidence_primary_missing_marks_candidate_only(monkeypatch):
     assert result.exit_code == 0
     body = json.loads(result.stdout)
     assert body["query_mode"] == "evidence"
-    assert body["primary_candidates"][0]["status"] == "candidate_only"
+    assert body["structured_fallbacks"][0]["status"] == "candidate_only"
 
 
 def test_inspect_fallback_stats_present_when_used(monkeypatch):
@@ -90,6 +90,28 @@ def test_inspect_fallback_stats_present_when_used(monkeypatch):
     body = json.loads(result.stdout)
     assert body["stage2"]["fallback_used"] is True
     assert body["stage2"]["files_scanned"] == 8
+
+
+def test_inspect_evidence_output_has_normalized_and_variants(monkeypatch):
+    def fake_two_stage(self, query, **kwargs):
+        return {
+            "stage1": {
+                "query_mode": "evidence",
+                "normalized_query": "熒惑守心",
+                "query_variants": ["荧惑守心", "熒惑守心"],
+                "hits": [],
+                "exact_hits": [],
+                "related_hits": [],
+            },
+            "stage2": {"hits": [], "primary_candidates": [], "fallback_used": True, "files_scanned": 2, "matched_files": [], "matched_headings": []},
+        }
+
+    monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect-kb", "--query", "荧惑守心"])
+    body = json.loads(result.stdout)
+    assert body["normalized_query"] == "熒惑守心"
+    assert "荧惑守心" in body["query_variants"]
 
 
 def test_resolve_evidence_output_contains_required_fields(tmp_path):

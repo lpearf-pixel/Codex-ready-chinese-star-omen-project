@@ -54,6 +54,23 @@ def test_retrieve_reranks_exact_hit_first(monkeypatch):
     assert out["exact_hits"][0]["chunk_id"] == "c1"
 
 
+def test_evidence_mode_filters_prompt_and_nav(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
+        return {
+            "hits": [
+                {"chunk_id": "p1", "title": "Agent", "path": "/docs/古籍/唐開元占經/prompts/x.md", "snippet": "荧惑守心"},
+                {"chunk_id": "n1", "title": "导航", "path": "/docs/古籍/唐開元占經/导航/总览.md", "snippet": "荧惑守心"},
+                {"chunk_id": "t1", "title": "荧惑守心", "path": "/docs/古籍/唐開元占經/术语卡片/荧惑守心.md", "snippet": "荧惑守心"},
+            ]
+        }
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.retrieve("荧惑守心")
+    ids = [h["chunk_id"] for h in out["hits"]]
+    assert "p1" not in ids and "n1" not in ids
+
+
 def test_phrase_fallback_finds_primary_candidate(monkeypatch):
     def fake_request(self, method, path, **kwargs):
         return {
@@ -64,7 +81,7 @@ def test_phrase_fallback_finds_primary_candidate(monkeypatch):
 
     monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
     calls = {"count": 0}
-    def fake_scan(self, query, book_id, mode, limit=3):
+    def fake_scan(self, query, book_id, mode, limit=3, query_variants=None):
         calls["count"] += 1
         if calls["count"] == 1:
             return ([{"chunk_id": "p0", "card_type": "fenjuan", "title": "卷十二", "snippet": "相关记载"}], {"files_scanned": 3, "matched_files": [], "matched_headings": []})
@@ -108,7 +125,7 @@ def test_stage2_uses_primary_not_structured(monkeypatch):
     monkeypatch.setattr(
         KBSearchRetriever,
         "_scan_primary_files",
-        lambda self, query, book_id, mode, limit=3: (
+        lambda self, query, book_id, mode, limit=3, query_variants=None: (
             [{"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "荧惑守心"}],
             {"files_scanned": 1, "matched_files": ["/docs/古籍/唐開元占經/分卷/卷十二.md"], "matched_headings": ["卷十二"]},
         ),

@@ -53,11 +53,14 @@ def _split_hits(result: dict[str, Any], *, include_raw: bool = False) -> dict[st
     structured = [h for h in filtered_hits if h.get("card_type") in [c.value for c in STAGE1_RECALL_CARD_TYPES]]
     primary = [h for h in filtered_hits if h.get("card_type") in [c.value for c in STAGE2_PRIMARY_CARD_TYPES]]
     payload = {
+        "normalized_query": result.get("normalized_query"),
+        "query_variants": result.get("query_variants", []),
         "exact_hits": result.get("exact_hits", []),
         "related_hits": result.get("related_hits", []),
         "structured_hits": structured,
         "primary_hits": primary,
         "primary_candidates": result.get("primary_candidates", []),
+        "structured_fallbacks": result.get("structured_fallbacks", []),
         "fallback_used": result.get("fallback_used", False),
         "files_scanned": result.get("files_scanned", 0),
         "matched_files": result.get("matched_files", []),
@@ -121,18 +124,21 @@ def inspect_kb_impl(
         else:
             if not stage2_out.get("primary_candidates"):
                 fallback_structured = (stage1_out.get("exact_hits", []) + stage1_out.get("related_hits", []))[:3]
-                stage2_out["primary_candidates"] = [{**h, "status": "candidate_only"} for h in fallback_structured]
+                stage2_out["structured_fallbacks"] = [{**h, "status": "candidate_only"} for h in fallback_structured]
 
         out = {
             "mode": "search",
             "query": query,
             "query_mode": query_mode,
+            "normalized_query": stage1_out.get("normalized_query"),
+            "query_variants": stage1_out.get("query_variants", []),
             "root": str(root) if root else None,
             "book_title": top_hit.get("book_title") if isinstance(top_hit, dict) else None,
             "book_id": top_hit.get("book_id") if isinstance(top_hit, dict) else None,
             "exact_hits": stage1_out.get("exact_hits", []),
             "related_hits": stage1_out.get("related_hits", []),
             "primary_candidates": stage2_out.get("primary_candidates", []),
+            "structured_fallbacks": stage2_out.get("structured_fallbacks", []),
             "stage1": stage1_out,
             "stage2": stage2_out,
             "note": "if no primary hits, output should be treated as clue/candidate explanation only",

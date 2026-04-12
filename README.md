@@ -76,6 +76,13 @@ pip install -e .
 - **exact fallback**：当 exact 不足时，会在本地只读扫描 primary 文档（`分卷/`、`全文合併版/全文合并版`），并输出扫描统计：`files_scanned`、`matched_files`、`matched_headings`、`fallback_used`。
 - **默认输出收敛**：非 `--show-raw` 模式下不输出 `stage1.raw_hits`/`stage1.inferred_hits`/`stage1.filtered_hits`/`stage2.raw_hits`。
 
+## 简繁体检索策略与 evidence fallback
+
+- evidence 查询会生成简繁体与空格变体（如：`荧惑守心` / `熒惑守心` / `荧惑 守心` / `熒惑 守心`）。
+- fallback 仅扫描当前 `book_id` 下 primary 原文目录：`分卷/`、`全文合併版`、`全文合并版`。
+- `primary_candidates` 只允许 `fenjuan/fulltext`；structured 结果进入 `structured_fallbacks` 并标记 `status=candidate_only`。
+- 当 `fallback_used=true` 时会输出真实扫描统计：`files_scanned`、`matched_files`、`matched_headings`。
+
 ## 测试手册（README 版）
 
 ### 1) 运行单元测试
