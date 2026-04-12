@@ -71,10 +71,10 @@ pip install -e .
 
 ## 短词/短语检索策略
 
-- **entity mode**（短实体词：如 `心宿`、`角宿`、`太白`、`荧惑`）：优先标题/文件名精确匹配，再看同目录相似结果。
-- **phrase mode**（短语占象：如 `荧惑守心`、`月犯心宿`、`五星聚`）：优先完整短语在 snippet/标题中的命中，再按关键词重合度排序。
-- **exact fallback**：若 exact 命中为空，会在本地知识源只读扫描 primary 文档（`分卷/`、`全文合併版/全文合并版`）补充 `primary_candidates`。
-- **默认输出裁剪**：`exact_hits` 最多 3 条，`related_hits` 最多 3 条，`primary_candidates` 最多 3 条。
+- **entity mode**（短实体词：如 `心宿`、`角宿`、`太白`、`荧惑`）：默认只展示 1 条最佳 `exact_hit`，`related_hits` 默认隐藏（可用 `--show-related` 打开）。
+- **evidence mode**（占象短语：如 `荧惑守心`、`月犯心宿`、`五星聚`）：默认优先展示 `primary_candidates`；若无 primary，则 structured 回落结果会标记 `status=candidate_only`。
+- **exact fallback**：当 exact 不足时，会在本地只读扫描 primary 文档（`分卷/`、`全文合併版/全文合并版`），并输出扫描统计：`files_scanned`、`matched_files`、`matched_headings`、`fallback_used`。
+- **默认输出收敛**：非 `--show-raw` 模式下不输出 `stage1.raw_hits`/`stage1.inferred_hits`/`stage1.filtered_hits`/`stage2.raw_hits`。
 
 ## 测试手册（README 版）
 

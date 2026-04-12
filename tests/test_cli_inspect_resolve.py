@@ -11,48 +11,85 @@ from typer.testing import CliRunner
 from src.cli import app
 
 
-def test_inspect_kb_with_query_filters(monkeypatch, tmp_path):
+def test_inspect_entity_default_only_one_exact_and_no_related(monkeypatch, tmp_path):
     def fake_two_stage(self, query, **kwargs):
-        assert query == "荧惑守心"
-        assert kwargs["book_id"] == "kaiyuan_zhanjing"
         return {
             "stage1": {
-                "raw_hits": [{"id": "n1", "path": "/docs/古籍/唐開元占經/术语卡片/守.md"}],
-                "inferred_hits": [{"id": "n1", "book_title": "唐開元占經", "book_id": "kaiyuan_zhanjing", "card_type": "term_card", "evidence_level": "structured"}],
-                "exact_hits": [{"id": "n1", "card_type": "term_card"}],
-                "related_hits": [],
-                "hits": [{"id": "n1", "book_title": "唐開元占經", "book_id": "kaiyuan_zhanjing", "card_type": "term_card", "evidence_level": "structured"}],
+                "query_mode": "entity",
+                "hits": [{"id": "n1", "book_title": "唐開元占經", "book_id": "kaiyuan_zhanjing", "card_type": "zhusu_card"}],
+                "exact_hits": [{"id": "n1"}, {"id": "n2"}],
+                "related_hits": [{"id": "r1"}],
             },
             "stage2": {
-                "raw_hits": [{"id": "n2", "path": "/docs/古籍/唐開元占經/分卷/卷十二.md"}],
-                "inferred_hits": [{"id": "n2", "card_type": "fenjuan", "evidence_level": "primary"}],
-                "hits": [{"id": "n2", "card_type": "fenjuan", "evidence_level": "primary"}],
-                "primary_candidates": [{"id": "n2", "card_type": "fenjuan", "evidence_level": "primary"}],
+                "hits": [],
+                "primary_candidates": [],
+                "fallback_used": False,
+                "files_scanned": 0,
+                "matched_files": [],
+                "matched_headings": [],
             },
         }
 
     monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
 
     runner = CliRunner()
-    result = runner.invoke(
-        app,
-        [
-            "inspect-kb",
-            "--root",
-            str(tmp_path),
-            "--query",
-            "荧惑守心",
-            "--book-id",
-            "kaiyuan_zhanjing",
-        ],
-    )
+    result = runner.invoke(app, ["inspect-kb", "--query", "心宿"])
     assert result.exit_code == 0
     body = json.loads(result.stdout)
-    assert body["mode"] == "search"
-    assert body["book_title"] == "唐開元占經"
-    assert body["book_id"] == "kaiyuan_zhanjing"
-    assert body["exact_hits"][0]["id"] == "n1"
-    assert body["primary_candidates"][0]["id"] == "n2"
+    assert body["query_mode"] == "entity"
+    assert len(body["exact_hits"]) == 1
+    assert body["related_hits"] == []
+
+
+def test_inspect_evidence_primary_missing_marks_candidate_only(monkeypatch):
+    def fake_two_stage(self, query, **kwargs):
+        return {
+            "stage1": {
+                "query_mode": "evidence",
+                "hits": [{"id": "s1", "card_type": "zhusu_card", "evidence_level": "structured"}],
+                "exact_hits": [{"id": "s1", "card_type": "zhusu_card", "evidence_level": "structured"}],
+                "related_hits": [],
+            },
+            "stage2": {
+                "hits": [],
+                "primary_candidates": [],
+                "fallback_used": True,
+                "files_scanned": 12,
+                "matched_files": [],
+                "matched_headings": [],
+            },
+        }
+
+    monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect-kb", "--query", "荧惑守心"])
+    assert result.exit_code == 0
+    body = json.loads(result.stdout)
+    assert body["query_mode"] == "evidence"
+    assert body["primary_candidates"][0]["status"] == "candidate_only"
+
+
+def test_inspect_fallback_stats_present_when_used(monkeypatch):
+    def fake_two_stage(self, query, **kwargs):
+        return {
+            "stage1": {"query_mode": "evidence", "hits": [], "exact_hits": [], "related_hits": []},
+            "stage2": {
+                "hits": [],
+                "primary_candidates": [],
+                "fallback_used": True,
+                "files_scanned": 8,
+                "matched_files": ["/docs/古籍/唐開元占經/分卷/卷十二.md"],
+                "matched_headings": ["卷十二"],
+            },
+        }
+
+    monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect-kb", "--query", "荧惑守心"])
+    assert result.exit_code == 0
+    body = json.loads(result.stdout)
+    assert body["stage2"]["fallback_used"] is True
+    assert body["stage2"]["files_scanned"] == 8
 
 
 def test_resolve_evidence_output_contains_required_fields(tmp_path):

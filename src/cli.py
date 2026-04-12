@@ -48,21 +48,26 @@ def validate_data_impl(
     return {"ok": True, "rules": len(rules), "asterisms": len(asterisms)}
 
 
-def _split_hits(result: dict[str, Any]) -> dict[str, Any]:
+def _split_hits(result: dict[str, Any], *, include_raw: bool = False) -> dict[str, Any]:
     filtered_hits = result.get("hits", [])
     structured = [h for h in filtered_hits if h.get("card_type") in [c.value for c in STAGE1_RECALL_CARD_TYPES]]
     primary = [h for h in filtered_hits if h.get("card_type") in [c.value for c in STAGE2_PRIMARY_CARD_TYPES]]
-    return {
-        "raw_hits": result.get("raw_hits", []),
-        "inferred_hits": result.get("inferred_hits", []),
+    payload = {
         "exact_hits": result.get("exact_hits", []),
         "related_hits": result.get("related_hits", []),
-        "filtered_hits": filtered_hits,
         "structured_hits": structured,
         "primary_hits": primary,
         "primary_candidates": result.get("primary_candidates", []),
         "fallback_used": result.get("fallback_used", False),
+        "files_scanned": result.get("files_scanned", 0),
+        "matched_files": result.get("matched_files", []),
+        "matched_headings": result.get("matched_headings", []),
     }
+    if include_raw:
+        payload["raw_hits"] = result.get("raw_hits", [])
+        payload["inferred_hits"] = result.get("inferred_hits", [])
+        payload["filtered_hits"] = filtered_hits
+    return payload
 
 
 def inspect_kb_impl(
@@ -76,6 +81,7 @@ def inspect_kb_impl(
     base_url: str | None = None,
     api_key: str | None = None,
     collection: str | None = None,
+    show_related: bool = False,
 ):
     settings = get_settings()
     effective_limit = limit if limit is not None else settings.app_default_limit
@@ -104,12 +110,23 @@ def inspect_kb_impl(
             stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
             stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
 
-        stage1_out = _split_hits(stage.get("stage1", {}))
-        stage2_out = _split_hits(stage.get("stage2", {}))
-        top_hit = (stage1_out.get("filtered_hits") or stage1_out.get("inferred_hits") or [None])[0]
+        stage1_out = _split_hits(stage.get("stage1", {}), include_raw=show_raw)
+        stage2_out = _split_hits(stage.get("stage2", {}), include_raw=show_raw)
+        top_hit = (stage.get("stage1", {}).get("hits") or stage.get("stage1", {}).get("inferred_hits") or [None])[0]
+        query_mode = stage.get("stage1", {}).get("query_mode", "entity")
+
+        if query_mode == "entity":
+            stage1_out["exact_hits"] = stage1_out.get("exact_hits", [])[:1]
+            stage1_out["related_hits"] = stage1_out.get("related_hits", [])[:3] if show_related else []
+        else:
+            if not stage2_out.get("primary_candidates"):
+                fallback_structured = (stage1_out.get("exact_hits", []) + stage1_out.get("related_hits", []))[:3]
+                stage2_out["primary_candidates"] = [{**h, "status": "candidate_only"} for h in fallback_structured]
+
         out = {
             "mode": "search",
             "query": query,
+            "query_mode": query_mode,
             "root": str(root) if root else None,
             "book_title": top_hit.get("book_title") if isinstance(top_hit, dict) else None,
             "book_id": top_hit.get("book_id") if isinstance(top_hit, dict) else None,
@@ -188,9 +205,10 @@ if typer:
         collection: str | None = typer.Option(None, "--collection"),
         base_url: str | None = typer.Option(None, "--base-url"),
         api_key: str | None = typer.Option(None, "--api-key"),
+        show_related: bool = typer.Option(False, "--show-related"),
         show_raw: bool = typer.Option(False, "--show-raw"),
     ):
-        out = inspect_kb_impl(root, query, book_id, card_type, evidence_level, limit, show_raw, base_url, api_key, collection)
+        out = inspect_kb_impl(root, query, book_id, card_type, evidence_level, limit, show_raw, base_url, api_key, collection, show_related)
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
@@ -275,6 +293,7 @@ def _main_fallback():  # pragma: no cover
     p_inspect.add_argument("--collection")
     p_inspect.add_argument("--base-url")
     p_inspect.add_argument("--api-key")
+    p_inspect.add_argument("--show-related", action="store_true")
     p_inspect.add_argument("--show-raw", action="store_true")
 
     p_resolve = sub.add_parser("resolve-evidence")
@@ -299,6 +318,7 @@ def _main_fallback():  # pragma: no cover
             args.base_url,
             args.api_key,
             args.collection,
+            args.show_related,
         )
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "resolve-evidence":

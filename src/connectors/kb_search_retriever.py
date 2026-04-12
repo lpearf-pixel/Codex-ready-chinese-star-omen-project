@@ -90,10 +90,10 @@ class KBSearchRetriever:
         q = query.strip()
         phrase_markers = {"守", "犯", "合", "聚", "逆", "留", "蚀", "蝕", "入"}
         if any(m in q for m in phrase_markers):
-            return "phrase"
+            return "evidence"
         if len(q) <= 3:
             return "entity"
-        return "phrase"
+        return "evidence"
 
     @staticmethod
     def _normalize_hits(raw_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -184,12 +184,15 @@ class KBSearchRetriever:
             out = [h for h in out if h.get("evidence_level") == evidence_level]
         return out
 
-    def _scan_primary_files(self, query: str, *, book_id: str | None, mode: str, limit: int = 3) -> list[dict[str, Any]]:
+    def _scan_primary_files(self, query: str, *, book_id: str | None, mode: str, limit: int = 3) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         roots = [Path(self.settings.kb_sources_root)]
         if self.settings.kb_enable_obsidian_source:
             roots.append(Path(self.settings.kb_obsidian_root))
 
         hits: list[dict[str, Any]] = []
+        files_scanned = 0
+        matched_files: list[str] = []
+        matched_headings: list[str] = []
         for root in roots:
             if not root.exists():
                 continue
@@ -197,6 +200,7 @@ class KBSearchRetriever:
                 normalized = str(path).replace("\\", "/")
                 if "/分卷/" not in normalized and "全文合併版" not in normalized and "全文合并版" not in normalized:
                     continue
+                files_scanned += 1
                 meta = infer_metadata_from_path(normalized)
                 if meta.get("card_type") not in {"fenjuan", "fulltext"}:
                     continue
@@ -210,6 +214,8 @@ class KBSearchRetriever:
                 matched = query in text if mode == "phrase" else query in text or self._basename(normalized) == query
                 if not matched:
                     continue
+                matched_files.append(normalized)
+                matched_headings.append(self._basename(normalized))
                 hits.append(
                     {
                         "chunk_id": f"fallback:{path.name}",
@@ -225,8 +231,16 @@ class KBSearchRetriever:
                     }
                 )
                 if len(hits) >= limit:
-                    return hits
-        return hits
+                    return hits, {
+                        "files_scanned": files_scanned,
+                        "matched_files": matched_files[:limit],
+                        "matched_headings": matched_headings[:limit],
+                    }
+        return hits, {
+            "files_scanned": files_scanned,
+            "matched_files": matched_files[:limit],
+            "matched_headings": matched_headings[:limit],
+        }
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/v1/health", use_auth=False)
@@ -325,13 +339,16 @@ class KBSearchRetriever:
             structured_seed = str(top_structured.get("title") or self._basename(top_structured.get("path")) or query)
 
         # stage2: structured -> primary backchain
-        primary_candidates = self._scan_primary_files(structured_seed, book_id=book_id, mode=self._query_mode(structured_seed), limit=3)
+        primary_candidates, scan_stats = self._scan_primary_files(structured_seed, book_id=book_id, mode=self._query_mode(structured_seed), limit=3)
         fallback_used = False
 
         stage2_exact = [h for h in primary_candidates if query in str(h.get("snippet") or "") or str(h.get("title") or "") == query][:3]
         if not stage2_exact:
             fallback_used = True
-            fallback_candidates = self._scan_primary_files(query, book_id=book_id, mode=mode, limit=3)
+            fallback_candidates, fallback_scan_stats = self._scan_primary_files(query, book_id=book_id, mode=mode, limit=3)
+            scan_stats["files_scanned"] += fallback_scan_stats.get("files_scanned", 0)
+            scan_stats["matched_files"] = list(dict.fromkeys(scan_stats.get("matched_files", []) + fallback_scan_stats.get("matched_files", [])))[:3]
+            scan_stats["matched_headings"] = list(dict.fromkeys(scan_stats.get("matched_headings", []) + fallback_scan_stats.get("matched_headings", [])))[:3]
             for hit in fallback_candidates:
                 if hit not in primary_candidates:
                     primary_candidates.append(hit)
@@ -348,6 +365,9 @@ class KBSearchRetriever:
             "hits": primary_candidates[:3],
             "primary_candidates": primary_candidates[:3],
             "fallback_used": fallback_used,
+            "files_scanned": scan_stats.get("files_scanned", 0),
+            "matched_files": scan_stats.get("matched_files", []),
+            "matched_headings": scan_stats.get("matched_headings", []),
             "only_structured_no_primary": bool(stage1.get("hits")) and not bool(primary_candidates),
         }
         return {"stage1": stage1, "stage2": stage2}

@@ -67,8 +67,8 @@ def test_phrase_fallback_finds_primary_candidate(monkeypatch):
     def fake_scan(self, query, book_id, mode, limit=3):
         calls["count"] += 1
         if calls["count"] == 1:
-            return [{"chunk_id": "p0", "card_type": "fenjuan", "title": "卷十二", "snippet": "相关记载"}]
-        return [{"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "荧惑守心"}]
+            return ([{"chunk_id": "p0", "card_type": "fenjuan", "title": "卷十二", "snippet": "相关记载"}], {"files_scanned": 3, "matched_files": [], "matched_headings": []})
+        return ([{"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "荧惑守心"}], {"files_scanned": 2, "matched_files": ["/docs/古籍/唐開元占經/分卷/卷十二.md"], "matched_headings": ["卷十二"]})
 
     monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", fake_scan)
     r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
@@ -105,7 +105,14 @@ def test_stage2_uses_primary_not_structured(monkeypatch):
 
     monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
     r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
-    monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", lambda self, query, book_id, mode, limit=3: [{"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "荧惑守心"}])
+    monkeypatch.setattr(
+        KBSearchRetriever,
+        "_scan_primary_files",
+        lambda self, query, book_id, mode, limit=3: (
+            [{"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "荧惑守心"}],
+            {"files_scanned": 1, "matched_files": ["/docs/古籍/唐開元占經/分卷/卷十二.md"], "matched_headings": ["卷十二"]},
+        ),
+    )
 
     out = r.two_stage_retrieve("心宿", book_id="kaiyuan_zhanjing", limit=3)
     assert out["stage2"]["primary_candidates"][0]["card_type"] == "fenjuan"
