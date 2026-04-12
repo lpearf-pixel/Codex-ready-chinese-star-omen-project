@@ -30,6 +30,7 @@ class KBSearchRetriever:
         settings: Settings | None = None,
     ) -> None:
         cfg = settings or get_settings()
+        self.settings = cfg
         self.base_url = (base_url or cfg.kb_search_effective_base_url).rstrip("/")
         self.timeout = timeout if timeout is not None else cfg.kb_search_timeout_seconds
         self.api_key = api_key if api_key is not None else cfg.kb_search_api_key
@@ -85,6 +86,16 @@ class KBSearchRetriever:
             raise KBSearchError(f"kb-search request failed: method={method} url={url} error={exc}") from exc
 
     @staticmethod
+    def _query_mode(query: str) -> str:
+        q = query.strip()
+        phrase_markers = {"守", "犯", "合", "聚", "逆", "留", "蚀", "蝕", "入"}
+        if any(m in q for m in phrase_markers):
+            return "phrase"
+        if len(q) <= 3:
+            return "entity"
+        return "phrase"
+
+    @staticmethod
     def _normalize_hits(raw_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
         inferred_hits: list[dict[str, Any]] = []
         for hit in raw_hits:
@@ -101,42 +112,59 @@ class KBSearchRetriever:
         return inferred_hits
 
     @staticmethod
-    def _rank_hit(query: str, hit: dict[str, Any]) -> int:
-        query_norm = query.strip().lower()
-        title = str(hit.get("title") or "").strip()
-        title_norm = title.lower()
-        snippet = str(hit.get("snippet") or "")
-        path = str(hit.get("path") or "")
-        basename = Path(path.replace("\\", "/")).stem.lower()
+    def _basename(path: str | None) -> str:
+        return Path(str(path or "").replace("\\", "/")).stem
 
-        score = 0
-        if title_norm == query_norm:
-            score += 100
-        if basename == query_norm:
-            score += 90
-        if f"# {query}" in snippet or f"【{query}】" in snippet or f"《{query}》" in snippet:
-            score += 80
-        if query_norm and query_norm in title_norm:
-            score += 30
-        if query_norm and query_norm in basename:
-            score += 30
-        score += int(float(hit.get("score") or 0) * 10)
+    @classmethod
+    def _rank_hit(cls, query: str, hit: dict[str, Any], mode: str) -> int:
+        q = query.strip()
+        qn = q.lower()
+        title = str(hit.get("title") or "").strip()
+        t = title.lower()
+        snippet = str(hit.get("snippet") or "")
+        basename = cls._basename(hit.get("path")).lower()
+        path = str(hit.get("path") or "").replace("\\", "/")
+
+        score = int(float(hit.get("score") or 0) * 10)
+        if mode == "entity":
+            if t == qn:
+                score += 120
+            if basename == qn:
+                score += 110
+            if f"# {q}" in snippet or f"## {q}" in snippet:
+                score += 100
+            if qn in t:
+                score += 30
+            if qn in basename:
+                score += 30
+            if "/逐宿卡/" in path and basename != qn:
+                score -= 20
+        else:
+            if q and q in snippet:
+                score += 120
+            if q and q in title:
+                score += 90
+            keywords = [k for k in ["荧惑", "守", "心", "月", "犯", "五星", "聚"] if k in q]
+            keyword_hits = sum(1 for k in keywords if k in snippet or k in title)
+            score += keyword_hits * 15
+            if q and q not in snippet and q not in title:
+                score -= 10
         return score
 
     @classmethod
-    def _rerank_hits(cls, query: str, inferred_hits: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-        ranked = [{**h, "_rank": cls._rank_hit(query, h)} for h in inferred_hits]
+    def _rerank_hits(cls, query: str, inferred_hits: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], str]:
+        mode = cls._query_mode(query)
+        ranked = [{**h, "_rank": cls._rank_hit(query, h, mode)} for h in inferred_hits]
         ranked.sort(key=lambda x: x.get("_rank", 0), reverse=True)
-        exact_hits = [h for h in ranked if h.get("_rank", 0) >= 90]
-        related_hits = [h for h in ranked if h.get("_rank", 0) < 90]
 
-        # 精确优先：短 query 且存在精确命中时，仅保留少量 related
-        is_short_query = len(query.strip()) <= 4
-        if is_short_query and exact_hits:
-            ordered = exact_hits + related_hits[:3]
+        if mode == "entity":
+            exact_hits = [h for h in ranked if cls._basename(h.get("path")) == query or str(h.get("title") or "") == query]
         else:
-            ordered = ranked
-        return ordered, exact_hits, related_hits
+            exact_hits = [h for h in ranked if query in str(h.get("snippet") or "") or query in str(h.get("title") or "")]
+        related_hits = [h for h in ranked if h not in exact_hits]
+
+        ordered = exact_hits[:3] + related_hits[:3] if exact_hits else ranked[:6]
+        return ordered, exact_hits[:3], related_hits[:3], mode
 
     @staticmethod
     def _apply_local_filters(
@@ -155,6 +183,50 @@ class KBSearchRetriever:
         if evidence_level:
             out = [h for h in out if h.get("evidence_level") == evidence_level]
         return out
+
+    def _scan_primary_files(self, query: str, *, book_id: str | None, mode: str, limit: int = 3) -> list[dict[str, Any]]:
+        roots = [Path(self.settings.kb_sources_root)]
+        if self.settings.kb_enable_obsidian_source:
+            roots.append(Path(self.settings.kb_obsidian_root))
+
+        hits: list[dict[str, Any]] = []
+        for root in roots:
+            if not root.exists():
+                continue
+            for path in root.rglob("*.md"):
+                normalized = str(path).replace("\\", "/")
+                if "/分卷/" not in normalized and "全文合併版" not in normalized and "全文合并版" not in normalized:
+                    continue
+                meta = infer_metadata_from_path(normalized)
+                if meta.get("card_type") not in {"fenjuan", "fulltext"}:
+                    continue
+                if book_id and meta.get("book_id") != book_id:
+                    continue
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except Exception:
+                    continue
+
+                matched = query in text if mode == "phrase" else query in text or self._basename(normalized) == query
+                if not matched:
+                    continue
+                hits.append(
+                    {
+                        "chunk_id": f"fallback:{path.name}",
+                        "score": 1.0,
+                        "path": normalized,
+                        "snippet": text[:200],
+                        "source_type": "docs",
+                        "title": self._basename(normalized),
+                        "book_title": meta.get("book_title"),
+                        "book_id": meta.get("book_id"),
+                        "card_type": meta.get("card_type"),
+                        "evidence_level": meta.get("evidence_level"),
+                    }
+                )
+                if len(hits) >= limit:
+                    return hits
+        return hits
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/v1/health", use_auth=False)
@@ -177,7 +249,7 @@ class KBSearchRetriever:
         raw_result = self._request("POST", "/v1/retrieve", json_payload=payload, use_auth=True)
         raw_hits = raw_result.get("hits", [])
         inferred_hits = self._normalize_hits(raw_hits)
-        reranked, exact_hits, related_hits = self._rerank_hits(query, inferred_hits)
+        reranked, exact_hits, related_hits, mode = self._rerank_hits(query, inferred_hits)
         filtered_hits = self._apply_local_filters(
             reranked,
             book_id=book_id,
@@ -186,11 +258,12 @@ class KBSearchRetriever:
         )
         return {
             **raw_result,
+            "query_mode": mode,
             "raw_hits": raw_hits,
             "inferred_hits": inferred_hits,
-            "exact_hits": exact_hits,
-            "related_hits": related_hits,
-            "hits": filtered_hits,
+            "exact_hits": exact_hits[:3],
+            "related_hits": related_hits[:3],
+            "hits": filtered_hits[:6],
         }
 
     def rag_query(
@@ -245,20 +318,36 @@ class KBSearchRetriever:
             collection=collection,
         )
 
-        primary_query = query
-        if stage1.get("exact_hits"):
-            top_exact = stage1["exact_hits"][0]
-            primary_query = str(top_exact.get("title") or Path(str(top_exact.get("path") or "")).stem or query)
+        mode = stage1.get("query_mode") or self._query_mode(query)
+        structured_seed = query
+        if stage1.get("hits"):
+            top_structured = stage1["hits"][0]
+            structured_seed = str(top_structured.get("title") or self._basename(top_structured.get("path")) or query)
 
-        stage2 = self.retrieve(
-            primary_query,
-            book_id=book_id,
-            card_types=["fenjuan", "fulltext"],
-            evidence_level="primary",
-            limit=limit,
-            collection=collection,
-        )
+        # stage2: structured -> primary backchain
+        primary_candidates = self._scan_primary_files(structured_seed, book_id=book_id, mode=self._query_mode(structured_seed), limit=3)
+        fallback_used = False
 
-        stage2["primary_candidates"] = stage2.get("hits", [])
-        stage2["only_structured_no_primary"] = bool(stage1.get("hits")) and not bool(stage2.get("hits"))
+        stage2_exact = [h for h in primary_candidates if query in str(h.get("snippet") or "") or str(h.get("title") or "") == query][:3]
+        if not stage2_exact:
+            fallback_used = True
+            fallback_candidates = self._scan_primary_files(query, book_id=book_id, mode=mode, limit=3)
+            for hit in fallback_candidates:
+                if hit not in primary_candidates:
+                    primary_candidates.append(hit)
+            primary_candidates = primary_candidates[:3]
+            stage2_exact = [h for h in primary_candidates if query in str(h.get("snippet") or "") or str(h.get("title") or "") == query][:3]
+        stage2_related = [h for h in primary_candidates if h not in stage2_exact][:3]
+
+        stage2 = {
+            "raw_hits": [],
+            "inferred_hits": primary_candidates,
+            "query_mode": mode,
+            "exact_hits": stage2_exact,
+            "related_hits": stage2_related,
+            "hits": primary_candidates[:3],
+            "primary_candidates": primary_candidates[:3],
+            "fallback_used": fallback_used,
+            "only_structured_no_primary": bool(stage1.get("hits")) and not bool(primary_candidates),
+        }
         return {"stage1": stage1, "stage2": stage2}

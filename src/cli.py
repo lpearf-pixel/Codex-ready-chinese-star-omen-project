@@ -61,6 +61,7 @@ def _split_hits(result: dict[str, Any]) -> dict[str, Any]:
         "structured_hits": structured,
         "primary_hits": primary,
         "primary_candidates": result.get("primary_candidates", []),
+        "fallback_used": result.get("fallback_used", False),
     }
 
 

@@ -68,6 +68,14 @@ pip install -e .
 
 > 安全提示：日志会对 API key 做脱敏显示，不会打印完整密钥。
 
+
+## 短词/短语检索策略
+
+- **entity mode**（短实体词：如 `心宿`、`角宿`、`太白`、`荧惑`）：优先标题/文件名精确匹配，再看同目录相似结果。
+- **phrase mode**（短语占象：如 `荧惑守心`、`月犯心宿`、`五星聚`）：优先完整短语在 snippet/标题中的命中，再按关键词重合度排序。
+- **exact fallback**：若 exact 命中为空，会在本地知识源只读扫描 primary 文档（`分卷/`、`全文合併版/全文合并版`）补充 `primary_candidates`。
+- **默认输出裁剪**：`exact_hits` 最多 3 条，`related_hits` 最多 3 条，`primary_candidates` 最多 3 条。
+
 ## 测试手册（README 版）
 
 ### 1) 运行单元测试

@@ -52,7 +52,31 @@ def test_retrieve_reranks_exact_hit_first(monkeypatch):
     out = r.retrieve("心宿", card_types=["zhusu_card"])
     assert out["hits"][0]["chunk_id"] == "c1"
     assert out["exact_hits"][0]["chunk_id"] == "c1"
-    assert out["hits"][0]["book_id"] == "kaiyuan_zhanjing"
+
+
+def test_phrase_fallback_finds_primary_candidate(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
+        return {
+            "hits": [
+                {"chunk_id": "s1", "title": "心宿", "path": "/docs/古籍/唐開元占經/逐宿卡/心宿.md", "snippet": "心宿相关"},
+            ]
+        }
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    calls = {"count": 0}
+    def fake_scan(self, query, book_id, mode, limit=3):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return [{"chunk_id": "p0", "card_type": "fenjuan", "title": "卷十二", "snippet": "相关记载"}]
+        return [{"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "荧惑守心"}]
+
+    monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", fake_scan)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+
+    out = r.two_stage_retrieve("荧惑守心", book_id="kaiyuan_zhanjing")
+    assert out["stage2"]["primary_candidates"]
+    assert out["stage2"]["primary_candidates"][0]["card_type"] in {"fenjuan", "fulltext"}
+    assert out["stage2"]["fallback_used"] is True
 
 
 def test_api_key_required():
@@ -71,21 +95,18 @@ def test_api_key_headers_shape():
     assert headers["X-API-Key"] == "abc"
 
 
-def test_stage2_structured_to_primary_resolution(monkeypatch):
-    def fake_retrieve(self, query, **kwargs):
-        card_types = kwargs.get("card_types") or []
-        if "zhusu_card" in card_types:
-            return {
-                "hits": [{"chunk_id": "s1", "title": "心宿", "path": "/docs/古籍/唐開元占經/逐宿卡/心宿.md", "card_type": "zhusu_card", "evidence_level": "structured"}],
-                "exact_hits": [{"chunk_id": "s1", "title": "心宿", "path": "/docs/古籍/唐開元占經/逐宿卡/心宿.md"}],
-            }
+def test_stage2_uses_primary_not_structured(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
         return {
-            "hits": [{"chunk_id": "p1", "title": "卷十二", "path": "/docs/古籍/唐開元占經/分卷/卷十二.md", "card_type": "fenjuan", "evidence_level": "primary"}],
-            "exact_hits": [],
+            "hits": [
+                {"chunk_id": "s1", "title": "心宿", "path": "/docs/古籍/唐開元占經/逐宿卡/心宿.md", "snippet": "心宿"},
+            ]
         }
 
-    monkeypatch.setattr(KBSearchRetriever, "retrieve", fake_retrieve)
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
     r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", lambda self, query, book_id, mode, limit=3: [{"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "荧惑守心"}])
+
     out = r.two_stage_retrieve("心宿", book_id="kaiyuan_zhanjing", limit=3)
-    assert out["stage2"]["primary_candidates"][0]["chunk_id"] == "p1"
+    assert out["stage2"]["primary_candidates"][0]["card_type"] == "fenjuan"
     assert out["stage2"]["only_structured_no_primary"] is False
