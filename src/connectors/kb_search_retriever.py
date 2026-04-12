@@ -24,6 +24,7 @@ class KBSearchRetriever:
     TRADITIONAL_MAP = str.maketrans({"荧": "熒", "并": "併"})
     SIMPLIFIED_MAP = str.maketrans({"熒": "荧", "併": "并"})
     EVIDENCE_EXCLUDED_CARD_TYPES = {"prompt_asset", "nav", "qa_example"}
+    PRIMARY_ONLY_PHRASES = {"荧惑守心", "熒惑守心", "月犯心宿", "五星聚", "土木合"}
     def __init__(
         self,
         base_url: str | None = None,
@@ -212,6 +213,7 @@ class KBSearchRetriever:
         files_scanned = 0
         matched_files: list[str] = []
         matched_headings: list[str] = []
+        matched_quotes: list[str] = []
         variants = query_variants or [query]
         normalized_variants = [v.replace(" ", "") for v in variants]
         for root in roots:
@@ -242,6 +244,8 @@ class KBSearchRetriever:
                     continue
                 matched_files.append(normalized)
                 matched_headings.append(heading)
+                quote = text[:120].replace("\n", " ")
+                matched_quotes.append(quote)
                 hits.append(
                     {
                         "chunk_id": f"fallback:{path.name}",
@@ -261,11 +265,13 @@ class KBSearchRetriever:
                         "files_scanned": files_scanned,
                         "matched_files": matched_files[:limit],
                         "matched_headings": matched_headings[:limit],
+                        "matched_quotes": matched_quotes[:limit],
                     }
         return hits, {
             "files_scanned": files_scanned,
             "matched_files": matched_files[:limit],
             "matched_headings": matched_headings[:limit],
+            "matched_quotes": matched_quotes[:limit],
         }
 
     def health(self) -> dict[str, Any]:
@@ -366,11 +372,21 @@ class KBSearchRetriever:
         book_id: str | None = None,
         limit: int | None = None,
         collection: str | None = None,
+        primary_only: bool = False,
     ) -> dict[str, Any]:
+        primary_only_phrase_mode = primary_only or query.replace(" ", "") in self.PRIMARY_ONLY_PHRASES
+        stage1_card_types = ["fenjuan", "fulltext"] if primary_only_phrase_mode else [
+            "xingguan_card",
+            "zhusu_card",
+            "term_card",
+            "extract_card",
+            "topic_index",
+            "chapter_summary",
+        ]
         stage1 = self.retrieve(
             query,
             book_id=book_id,
-            card_types=["xingguan_card", "zhusu_card", "term_card", "extract_card", "topic_index", "chapter_summary"],
+            card_types=stage1_card_types,
             limit=limit,
             collection=collection,
         )
@@ -409,6 +425,7 @@ class KBSearchRetriever:
             scan_stats["files_scanned"] += fallback_scan_stats.get("files_scanned", 0)
             scan_stats["matched_files"] = list(dict.fromkeys(scan_stats.get("matched_files", []) + fallback_scan_stats.get("matched_files", [])))[:3]
             scan_stats["matched_headings"] = list(dict.fromkeys(scan_stats.get("matched_headings", []) + fallback_scan_stats.get("matched_headings", [])))[:3]
+            scan_stats["matched_quotes"] = list(dict.fromkeys(scan_stats.get("matched_quotes", []) + fallback_scan_stats.get("matched_quotes", [])))[:3]
             for hit in fallback_candidates:
                 if hit not in primary_candidates:
                     primary_candidates.append(hit)
@@ -438,6 +455,8 @@ class KBSearchRetriever:
             "files_scanned": scan_stats.get("files_scanned", 0),
             "matched_files": scan_stats.get("matched_files", []),
             "matched_headings": scan_stats.get("matched_headings", []),
+            "matched_quotes": scan_stats.get("matched_quotes", []),
+            "primary_only_phrase_mode": primary_only_phrase_mode,
             "only_structured_no_primary": bool(stage1.get("hits")) and not bool(primary_candidates),
         }
         if stage2["fallback_used"] and stage2["files_scanned"] == 0:
