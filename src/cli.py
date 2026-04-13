@@ -120,7 +120,12 @@ def inspect_kb_impl(
         if query_mode == "knowledge":
             stage1_out["exact_hits"] = stage1_out.get("exact_hits", [])[:1]
             stage1_out["related_hits"] = stage1_out.get("related_hits", [])[:3] if show_related else []
-        elif query_mode == "evidence" and not stage2_out.get("primary_candidates"):
+        elif (
+            query_mode == "evidence"
+            and not stage2_out.get("structured_fallbacks")
+            and not stage2_out.get("primary_hits")
+            and not stage2_out.get("primary_candidates")
+        ):
             fallback_pool: list[dict[str, Any]] = []
             for key in ("exact_hits", "related_hits", "structured_hits"):
                 fallback_pool.extend(stage1_out.get(key, []))
