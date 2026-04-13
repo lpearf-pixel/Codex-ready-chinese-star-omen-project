@@ -230,7 +230,7 @@ if typer:
 
 
     @app.command("search-kb")
-def search_kb(
+    def search_kb(
         query: str,
         book_id: str | None = None,
         card_type: list[str] | None = None,
