@@ -90,12 +90,19 @@ def inspect_kb_impl(
     effective_limit = limit if limit is not None else settings.app_default_limit
     if query:
         retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
+        filters: dict[str, Any] = {}
+        if book_id:
+            filters["book_id"] = book_id
+        if card_type:
+            filters["card_type"] = card_type
+        if evidence_level:
+            filters["evidence_level"] = evidence_level
         try:
             stage = retriever.two_stage_retrieve(
                 query,
-                book_id=book_id,
-                limit=effective_limit,
+                top_k=effective_limit,
                 collection=collection,
+                filters=filters or None,
             )
         except Exception as exc:
             return {
@@ -105,26 +112,14 @@ def inspect_kb_impl(
                 "error": str(exc),
                 "hint": "check KB_SEARCH_API_KEY, KB_SEARCH_BASE_URL/KB_SEARCH_API_PORT, and whether kb-search service is running",
             }
-        if card_type:
-            allowed = set(card_type)
-            stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("card_type") in allowed]
-            stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("card_type") in allowed]
-        if evidence_level:
-            stage["stage1"]["hits"] = [h for h in stage.get("stage1", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
-            stage["stage2"]["hits"] = [h for h in stage.get("stage2", {}).get("hits", []) if h.get("evidence_level") == evidence_level]
-
         stage1_out = _split_hits(stage.get("stage1", {}), include_raw=show_raw)
         stage2_out = _split_hits(stage.get("stage2", {}), include_raw=show_raw)
         top_hit = (stage.get("stage1", {}).get("hits") or stage.get("stage1", {}).get("inferred_hits") or [None])[0]
-        query_mode = stage.get("stage1", {}).get("query_mode", "entity")
+        query_mode = stage.get("stage1", {}).get("query_mode", "knowledge")
 
-        if query_mode == "entity":
+        if query_mode == "knowledge":
             stage1_out["exact_hits"] = stage1_out.get("exact_hits", [])[:1]
             stage1_out["related_hits"] = stage1_out.get("related_hits", [])[:3] if show_related else []
-        else:
-            if not stage2_out.get("primary_candidates"):
-                fallback_structured = (stage1_out.get("exact_hits", []) + stage1_out.get("related_hits", []))[:3]
-                stage2_out["structured_fallbacks"] = [{**h, "status": "candidate_only"} for h in fallback_structured]
 
         out = {
             "mode": "search",
@@ -235,24 +230,35 @@ if typer:
 
 
     @app.command("search-kb")
-    def search_kb(
+def search_kb(
         query: str,
         book_id: str | None = None,
         card_type: list[str] | None = None,
         evidence_level: str | None = None,
-        limit: int | None = None,
+        top_k: int | None = None,
         collection: str | None = None,
+        query_mode: str | None = None,
+        literal_first: bool | None = None,
+        literal_pool_factor: int | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
     ):
         retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
+        filters: dict[str, Any] = {}
+        if book_id:
+            filters["book_id"] = book_id
+        if card_type:
+            filters["card_type"] = card_type
+        if evidence_level:
+            filters["evidence_level"] = evidence_level
         result = retriever.search(
             query,
-            book_id=book_id,
-            card_types=card_type,
-            evidence_level=evidence_level,
-            limit=limit,
+            top_k=top_k,
             collection=collection,
+            filters=filters or None,
+            query_mode=query_mode,
+            literal_first=literal_first,
+            literal_pool_factor=literal_pool_factor,
         )
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 

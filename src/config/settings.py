@@ -68,6 +68,9 @@ class Settings:
     kb_search_api_key: str | None
     kb_search_default_collection: str
     kb_search_timeout_seconds: float
+    kb_search_query_normalize: bool
+    kb_search_query_s2t: bool
+    kb_search_query_t2s: bool
 
     kb_sources_root: str
     kb_enable_obsidian_source: bool
@@ -167,6 +170,9 @@ def load_settings(config_path: Path | None = None) -> Settings:
         kb_search_api_key=_env_or("KB_SEARCH_API_KEY", kb_search.get("api_key")),
         kb_search_default_collection=str(_env_or("KB_SEARCH_DEFAULT_COLLECTION", kb_search.get("default_collection"))),
         kb_search_timeout_seconds=_as_float("KB_SEARCH_TIMEOUT_SECONDS", _env_or("KB_SEARCH_TIMEOUT_SECONDS", kb_search.get("timeout_seconds"))),
+        kb_search_query_normalize=_as_bool(_env_or("KB_SEARCH_QUERY_NORMALIZE", kb_search.get("query_normalize", True))),
+        kb_search_query_s2t=_as_bool(_env_or("KB_SEARCH_QUERY_S2T", kb_search.get("query_s2t", True))),
+        kb_search_query_t2s=_as_bool(_env_or("KB_SEARCH_QUERY_T2S", kb_search.get("query_t2s", True))),
         kb_sources_root=str(_env_or("KB_SOURCES_ROOT", kb_cfg.get("sources_root"))),
         kb_enable_obsidian_source=_as_bool(_env_or("KB_ENABLE_OBSIDIAN_SOURCE", kb_cfg.get("enable_obsidian_source"))),
         kb_obsidian_root=str(_env_or("KB_OBSIDIAN_ROOT", kb_cfg.get("obsidian_root"))),

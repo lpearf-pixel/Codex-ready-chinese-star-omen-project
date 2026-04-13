@@ -11,11 +11,11 @@ from typer.testing import CliRunner
 from src.cli import app
 
 
-def test_inspect_entity_default_only_one_exact_and_no_related(monkeypatch, tmp_path):
+def test_inspect_knowledge_default_only_one_exact_and_no_related(monkeypatch, tmp_path):
     def fake_two_stage(self, query, **kwargs):
         return {
             "stage1": {
-                "query_mode": "entity",
+                "query_mode": "knowledge",
                 "hits": [{"id": "n1", "book_title": "唐開元占經", "book_id": "kaiyuan_zhanjing", "card_type": "zhusu_card"}],
                 "exact_hits": [{"id": "n1"}, {"id": "n2"}],
                 "related_hits": [{"id": "r1"}],
@@ -36,7 +36,7 @@ def test_inspect_entity_default_only_one_exact_and_no_related(monkeypatch, tmp_p
     result = runner.invoke(app, ["inspect-kb", "--query", "心宿"])
     assert result.exit_code == 0
     body = json.loads(result.stdout)
-    assert body["query_mode"] == "entity"
+    assert body["query_mode"] == "knowledge"
     assert len(body["exact_hits"]) == 1
     assert body["related_hits"] == []
 
@@ -112,6 +112,29 @@ def test_inspect_evidence_output_has_normalized_and_variants(monkeypatch):
     body = json.loads(result.stdout)
     assert body["normalized_query"] == "熒惑守心"
     assert "荧惑守心" in body["query_variants"]
+
+
+def test_inspect_structured_fallback_comes_from_stage2(monkeypatch):
+    def fake_two_stage(self, query, **kwargs):
+        return {
+            "stage1": {"query_mode": "evidence", "hits": [], "exact_hits": [], "related_hits": []},
+            "stage2": {
+                "hits": [],
+                "primary_candidates": [],
+                "structured_fallbacks": [{"id": "s1", "card_type": "term_card", "status": "candidate_only"}],
+                "fallback_used": True,
+                "files_scanned": 1,
+                "matched_files": [],
+                "matched_headings": [],
+            },
+        }
+
+    monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect-kb", "--query", "荧惑守心"])
+    assert result.exit_code == 0
+    body = json.loads(result.stdout)
+    assert body["structured_fallbacks"][0]["card_type"] == "term_card"
 
 
 def test_resolve_evidence_output_contains_required_fields(tmp_path):

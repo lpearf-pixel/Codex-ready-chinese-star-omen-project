@@ -14,9 +14,9 @@ from src.cli import app
 def test_search_kb_command(monkeypatch):
     def fake_search(self, query, **kwargs):
         assert query == "荧惑守心"
-        assert kwargs["book_id"] == "kaiyuan_zhanjing"
-        assert kwargs["card_types"] == ["term_card"]
-        assert kwargs["limit"] == 5
+        assert kwargs["top_k"] == 5
+        assert kwargs["filters"]["book_id"] == "kaiyuan_zhanjing"
+        assert kwargs["filters"]["card_type"] == ["term_card"]
         return {"hits": [{"id": "x1"}]}
 
     monkeypatch.setattr("src.cli.KBSearchRetriever.search", fake_search)
@@ -31,7 +31,7 @@ def test_search_kb_command(monkeypatch):
             "kaiyuan_zhanjing",
             "--card-type",
             "term_card",
-            "--limit",
+            "--top-k",
             "5",
         ],
     )
@@ -43,7 +43,7 @@ def test_cli_limit_overrides_env(monkeypatch):
     monkeypatch.setenv("APP_DEFAULT_LIMIT", "8")
 
     def fake_two_stage(self, query, **kwargs):
-        assert kwargs["limit"] == 3
+        assert kwargs["top_k"] == 3
         return {"stage1": {"hits": []}, "stage2": {"hits": []}}
 
     monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)

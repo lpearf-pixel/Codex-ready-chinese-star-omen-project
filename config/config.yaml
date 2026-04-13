@@ -11,6 +11,9 @@ kb_search:
   api_key: ${KB_SEARCH_API_KEY:-}
   default_collection: ${KB_SEARCH_DEFAULT_COLLECTION:-local_kb_default}
   timeout_seconds: ${KB_SEARCH_TIMEOUT_SECONDS:-20}
+  query_normalize: ${KB_SEARCH_QUERY_NORMALIZE:-true}
+  query_s2t: ${KB_SEARCH_QUERY_S2T:-true}
+  query_t2s: ${KB_SEARCH_QUERY_T2S:-true}
 
 knowledge_base:
   sources_root: ${KB_SOURCES_ROOT:-./data/sources}

@@ -25,6 +25,8 @@ class KBSearchRetriever:
     SIMPLIFIED_MAP = str.maketrans({"熒": "荧", "併": "并"})
     EVIDENCE_EXCLUDED_CARD_TYPES = {"prompt_asset", "nav", "qa_example"}
     PRIMARY_ONLY_PHRASES = {"荧惑守心", "熒惑守心", "月犯心宿", "五星聚", "土木合"}
+    PRIMARY_CARD_TYPES = {"fenjuan", "fulltext"}
+    STRUCTURED_CARD_TYPES = {"term_card", "zhusu_card", "extract_card"}
     def __init__(
         self,
         base_url: str | None = None,
@@ -92,12 +94,15 @@ class KBSearchRetriever:
     @staticmethod
     def _query_mode(query: str) -> str:
         q = query.strip()
+        support_markers = {"如何", "怎么", "為何", "为何", "解释", "背景", "來源", "来源", "依据"}
+        if any(marker in q for marker in support_markers):
+            return "support"
         phrase_markers = {"守", "犯", "合", "聚", "逆", "留", "蚀", "蝕", "入"}
         if any(m in q for m in phrase_markers):
             return "evidence"
         if len(q) <= 3:
-            return "entity"
-        return "evidence"
+            return "knowledge"
+        return "knowledge"
 
     @classmethod
     def _normalize_query(cls, query: str) -> str:
@@ -123,10 +128,10 @@ class KBSearchRetriever:
             inferred_hits.append(
                 {
                     **hit,
-                    "book_title": inferred.get("book_title"),
-                    "book_id": inferred.get("book_id"),
-                    "card_type": inferred.get("card_type"),
-                    "evidence_level": inferred.get("evidence_level"),
+                    "book_title": hit.get("book_title") or inferred.get("book_title"),
+                    "book_id": hit.get("book_id") or inferred.get("book_id"),
+                    "card_type": hit.get("card_type") or inferred.get("card_type"),
+                    "evidence_level": hit.get("evidence_level") or inferred.get("evidence_level"),
                 }
             )
         return inferred_hits
@@ -146,7 +151,7 @@ class KBSearchRetriever:
         path = str(hit.get("path") or "").replace("\\", "/")
 
         score = int(float(hit.get("score") or 0) * 10)
-        if mode == "entity":
+        if mode == "knowledge":
             if t == qn:
                 score += 120
             if basename == qn:
@@ -177,7 +182,7 @@ class KBSearchRetriever:
         ranked = [{**h, "_rank": cls._rank_hit(query, h, mode)} for h in inferred_hits]
         ranked.sort(key=lambda x: x.get("_rank", 0), reverse=True)
 
-        if mode == "entity":
+        if mode == "knowledge":
             exact_hits = [h for h in ranked if cls._basename(h.get("path")) == query or str(h.get("title") or "") == query]
         else:
             exact_hits = [h for h in ranked if query in str(h.get("snippet") or "") or query in str(h.get("title") or "")]
@@ -281,33 +286,42 @@ class KBSearchRetriever:
         self,
         query: str,
         *,
-        book_id: str | None = None,
-        card_types: list[str] | None = None,
-        evidence_level: str | None = None,
-        limit: int | None = None,
+        top_k: int | None = None,
         collection: str | None = None,
+        filters: dict[str, Any] | None = None,
+        query_mode: str | None = None,
+        literal_first: bool | None = None,
+        literal_pool_factor: int | None = None,
     ) -> dict[str, Any]:
+        effective_query_mode = query_mode or self._query_mode(query)
+        effective_literal_first = literal_first
+        if effective_literal_first is None:
+            effective_literal_first = effective_query_mode == "evidence"
         payload: dict[str, Any] = {
             "query": query,
-            "limit": limit if limit is not None else self.default_limit,
+            "top_k": top_k if top_k is not None else self.default_limit,
             "collection": collection or self.default_collection,
+            "query_mode": effective_query_mode,
+            "literal_first": effective_literal_first,
+            "query_normalize": self.settings.kb_search_query_normalize,
+            "query_s2t": self.settings.kb_search_query_s2t,
+            "query_t2s": self.settings.kb_search_query_t2s,
         }
+        if filters:
+            payload["filters"] = filters
+        if literal_pool_factor is not None:
+            payload["literal_pool_factor"] = literal_pool_factor
         raw_result = self._request("POST", "/v1/retrieve", json_payload=payload, use_auth=True)
         raw_hits = raw_result.get("hits", [])
         inferred_hits = self._normalize_hits(raw_hits)
         reranked, _, _, mode = self._rerank_hits(query, inferred_hits)
-        filtered_hits = self._apply_local_filters(
-            reranked,
-            book_id=book_id,
-            card_types=card_types,
-            evidence_level=evidence_level,
-        )
+        filtered_hits = reranked
         normalized_query = self._normalize_query(query)
         query_variants = self._query_variants(query)
         if mode == "evidence":
             filtered_hits = [h for h in filtered_hits if h.get("card_type") not in self.EVIDENCE_EXCLUDED_CARD_TYPES]
 
-        if mode == "entity":
+        if mode == "knowledge":
             exact_hits = [h for h in filtered_hits if self._basename(h.get("path")) == query or str(h.get("title") or "") == query]
         else:
             exact_hits = [
@@ -320,6 +334,8 @@ class KBSearchRetriever:
         return {
             **raw_result,
             "query_mode": mode,
+            "literal_first": effective_literal_first,
+            "literal_pool_factor": literal_pool_factor,
             "normalized_query": normalized_query,
             "query_variants": query_variants,
             "raw_hits": raw_hits,
@@ -350,32 +366,36 @@ class KBSearchRetriever:
         self,
         query: str,
         *,
-        book_id: str | None = None,
-        card_types: list[str] | None = None,
-        evidence_level: str | None = None,
-        limit: int | None = None,
+        top_k: int | None = None,
         collection: str | None = None,
+        filters: dict[str, Any] | None = None,
+        query_mode: str | None = None,
+        literal_first: bool | None = None,
+        literal_pool_factor: int | None = None,
     ) -> dict[str, Any]:
         return self.retrieve(
             query,
-            book_id=book_id,
-            card_types=card_types,
-            evidence_level=evidence_level,
-            limit=limit,
+            top_k=top_k,
             collection=collection,
+            filters=filters,
+            query_mode=query_mode,
+            literal_first=literal_first,
+            literal_pool_factor=literal_pool_factor,
         )
 
     def two_stage_retrieve(
         self,
         query: str,
         *,
-        book_id: str | None = None,
-        limit: int | None = None,
+        top_k: int | None = None,
         collection: str | None = None,
-        primary_only: bool = False,
+        filters: dict[str, Any] | None = None,
+        query_mode: str | None = None,
+        literal_first: bool | None = None,
+        literal_pool_factor: int | None = None,
     ) -> dict[str, Any]:
-        primary_only_phrase_mode = primary_only or query.replace(" ", "") in self.PRIMARY_ONLY_PHRASES
-        stage1_card_types = ["fenjuan", "fulltext"] if primary_only_phrase_mode else [
+        effective_query_mode = query_mode or self._query_mode(query)
+        stage1_card_types = [
             "xingguan_card",
             "zhusu_card",
             "term_card",
@@ -383,22 +403,25 @@ class KBSearchRetriever:
             "topic_index",
             "chapter_summary",
         ]
+        stage1_filters = {**(filters or {}), "card_type": stage1_card_types}
         stage1 = self.retrieve(
             query,
-            book_id=book_id,
-            card_types=stage1_card_types,
-            limit=limit,
+            top_k=top_k,
             collection=collection,
+            filters=stage1_filters,
+            query_mode=effective_query_mode,
+            literal_first=literal_first,
+            literal_pool_factor=literal_pool_factor,
         )
 
-        mode = stage1.get("query_mode") or self._query_mode(query)
+        mode = stage1.get("query_mode") or effective_query_mode
         query_variants = stage1.get("query_variants") or self._query_variants(query)
         structured_seed = query
         if stage1.get("hits"):
             top_structured = stage1["hits"][0]
             structured_seed = str(top_structured.get("title") or self._basename(top_structured.get("path")) or query)
 
-        # stage2: structured -> primary backchain
+        book_id = filters.get("book_id") if filters else None
         primary_candidates, scan_stats = self._scan_primary_files(
             structured_seed,
             book_id=book_id,
@@ -435,10 +458,16 @@ class KBSearchRetriever:
                 if any(v.replace(" ", "") in str(h.get("snippet") or "").replace(" ", "") for v in query_variants)
                 or any(v.replace(" ", "") in str(h.get("title") or "").replace(" ", "") for v in query_variants)
             ][:3]
+        primary_candidates = [h for h in primary_candidates if h.get("card_type") in self.PRIMARY_CARD_TYPES][:3]
+        stage2_exact = [h for h in stage2_exact if h.get("card_type") in self.PRIMARY_CARD_TYPES][:3]
         stage2_related = [h for h in primary_candidates if h not in stage2_exact][:3]
         structured_fallbacks = []
         if mode == "evidence" and not primary_candidates:
-            structured_fallbacks = [{**h, "status": "candidate_only"} for h in (stage1.get("exact_hits", []) + stage1.get("related_hits", []))[:3]]
+            structured_fallbacks = [
+                {**h, "status": "candidate_only"}
+                for h in (stage1.get("exact_hits", []) + stage1.get("related_hits", []))
+                if h.get("card_type") in self.STRUCTURED_CARD_TYPES
+            ][:3]
 
         stage2 = {
             "raw_hits": [],
@@ -456,7 +485,6 @@ class KBSearchRetriever:
             "matched_files": scan_stats.get("matched_files", []),
             "matched_headings": scan_stats.get("matched_headings", []),
             "matched_quotes": scan_stats.get("matched_quotes", []),
-            "primary_only_phrase_mode": primary_only_phrase_mode,
             "only_structured_no_primary": bool(stage1.get("hits")) and not bool(primary_candidates),
         }
         if stage2["fallback_used"] and stage2["files_scanned"] == 0:

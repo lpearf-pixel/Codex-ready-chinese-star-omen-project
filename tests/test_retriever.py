@@ -29,12 +29,23 @@ def test_retrieve_request_payload(monkeypatch):
 
     monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
     r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k", default_collection="local_kb_default")
-    r.retrieve("荧惑", book_id="kaiyuan_zhanjing", card_types=["term_card"], evidence_level="structured", limit=5)
+    r.retrieve(
+        "荧惑",
+        top_k=5,
+        filters={"book_id": "kaiyuan_zhanjing", "card_type": ["term_card"], "evidence_level": "structured"},
+        query_mode="knowledge",
+        literal_first=False,
+        literal_pool_factor=3,
+    )
     assert captured["method"] == "POST"
     assert captured["path"] == "/v1/retrieve"
     assert captured["use_auth"] is True
     assert captured["payload"]["query"] == "荧惑"
-    assert "filters" not in captured["payload"]
+    assert captured["payload"]["top_k"] == 5
+    assert captured["payload"]["filters"]["book_id"] == "kaiyuan_zhanjing"
+    assert captured["payload"]["query_mode"] == "knowledge"
+    assert captured["payload"]["literal_first"] is False
+    assert captured["payload"]["literal_pool_factor"] == 3
     assert captured["payload"]["collection"] == "local_kb_default"
 
 
@@ -49,9 +60,10 @@ def test_retrieve_reranks_exact_hit_first(monkeypatch):
 
     monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
     r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
-    out = r.retrieve("心宿", card_types=["zhusu_card"])
+    out = r.retrieve("心宿", filters={"card_type": ["zhusu_card"]})
     assert out["hits"][0]["chunk_id"] == "c1"
     assert out["exact_hits"][0]["chunk_id"] == "c1"
+    assert out["query_mode"] == "knowledge"
 
 
 def test_evidence_mode_filters_prompt_and_nav(monkeypatch):
@@ -90,7 +102,7 @@ def test_phrase_fallback_finds_primary_candidate(monkeypatch):
     monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", fake_scan)
     r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
 
-    out = r.two_stage_retrieve("荧惑守心", book_id="kaiyuan_zhanjing")
+    out = r.two_stage_retrieve("荧惑守心", filters={"book_id": "kaiyuan_zhanjing"})
     assert out["stage2"]["primary_candidates"]
     assert out["stage2"]["primary_candidates"][0]["card_type"] in {"fenjuan", "fulltext"}
     assert out["stage2"]["fallback_used"] is True
@@ -131,6 +143,61 @@ def test_stage2_uses_primary_not_structured(monkeypatch):
         ),
     )
 
-    out = r.two_stage_retrieve("心宿", book_id="kaiyuan_zhanjing", limit=3)
+    out = r.two_stage_retrieve("心宿", filters={"book_id": "kaiyuan_zhanjing"}, top_k=3)
     assert out["stage2"]["primary_candidates"][0]["card_type"] == "fenjuan"
     assert out["stage2"]["only_structured_no_primary"] is False
+
+
+def test_evidence_defaults_literal_first(monkeypatch):
+    captured = {}
+
+    def fake_request(self, method, path, **kwargs):
+        captured["payload"] = kwargs["json_payload"]
+        return {"hits": []}
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    r.retrieve("荧惑守心")
+    assert captured["payload"]["query_mode"] == "evidence"
+    assert captured["payload"]["literal_first"] is True
+
+
+def test_primary_candidates_excludes_structured(monkeypatch):
+    monkeypatch.setattr(KBSearchRetriever, "_request", lambda self, method, path, **kwargs: {"hits": []})
+
+    def fake_scan(self, query, book_id, mode, limit=3, query_variants=None):
+        return (
+            [
+                {"chunk_id": "s1", "card_type": "term_card", "title": "术语", "snippet": "荧惑守心"},
+                {"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "荧惑守心"},
+            ],
+            {"files_scanned": 1, "matched_files": [], "matched_headings": []},
+        )
+
+    monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", fake_scan)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.two_stage_retrieve("荧惑守心")
+    assert [h["card_type"] for h in out["stage2"]["primary_candidates"]] == ["fenjuan"]
+
+
+def test_hit_metadata_priority_over_path_inference(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
+        return {
+            "hits": [
+                {
+                    "chunk_id": "x1",
+                    "title": "心宿",
+                    "path": "/docs/古籍/唐開元占經/逐宿卡/心宿.md",
+                    "snippet": "心宿",
+                    "card_type": "fenjuan",
+                    "book_id": "override_book",
+                    "evidence_level": "primary",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.retrieve("心宿")
+    assert out["hits"][0]["card_type"] == "fenjuan"
+    assert out["hits"][0]["book_id"] == "override_book"

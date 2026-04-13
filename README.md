@@ -125,7 +125,7 @@ python -m src.cli resolve-evidence --rule data/processed/corpus/sample_rule_one.
 ### 5) 调用 kb-search 进行召回
 
 ```bash
-python -m src.cli search-kb "荧惑守心" --book-id kaiyuan_zhanjing --card-type term_card --limit 5
+python -m src.cli search-kb "荧惑守心" --book-id kaiyuan_zhanjing --card-type term_card --top-k 5
 ```
 
 ### 6) 批量审计规则证据可引用状态
@@ -189,9 +189,7 @@ PY
 
 ### 4) inspect-kb 调用示例
 
-> 注意：当前 `card_type` / `evidence_level` 并非来自 kb-search 原始字段，而是基于返回 `path` 在本地推断得到。
-
-> 另外，`inspect-kb` 已启用本地 rerank（标题/文件名精确匹配优先），短词查询（如“心宿”）会优先精确命中并下调相似宿名结果。
+> `inspect-kb` 现在是结果整理器：负责将 stage1/stage2 输出按 structured / primary 展示，不再承担底层检索参数编排。
 
 ```bash
 export KB_SEARCH_API_KEY=your_key
@@ -203,6 +201,27 @@ python -m src.cli inspect-kb \
   --limit 10 \
   --show-raw
 ```
+
+## 新版 kb-search API 对接
+
+- `search-kb` 已直接映射新版 `/v1/retrieve` 参数：
+  - `query`
+  - `top_k`
+  - `collection`
+  - `filters`
+  - `query_mode`
+  - `literal_first`
+  - `literal_pool_factor`
+- query intent 会收敛到 `query_mode`：
+  - entity query → `knowledge`
+  - evidence query → `evidence`
+  - support query → `support`
+- evidence query 默认行为：
+  - `query_mode = evidence`
+  - `literal_first = true`
+- 元数据优先级：
+  - 若命中结果已带 `book_id/card_type/evidence_level`，优先采用命中字段；
+  - 仅缺失时才退回路径推断。
 
 ### 5) resolve-evidence 调用示例
 
