@@ -8,7 +8,7 @@ app:
 kb_search:
   base_url: ${KB_SEARCH_BASE_URL:-}
   api_port: ${KB_SEARCH_API_PORT:-8008}
-  api_key: ${KB_SEARCH_API_KEY:-}
+  api_key: ${KB_SEARCH_API_KEY:-dev_change_me}
   default_collection: ${KB_SEARCH_DEFAULT_COLLECTION:-local_kb_default}
   timeout_seconds: ${KB_SEARCH_TIMEOUT_SECONDS:-20}
   query_normalize: ${KB_SEARCH_QUERY_NORMALIZE:-true}
