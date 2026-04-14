@@ -120,6 +120,31 @@ def inspect_kb_impl(
         if query_mode == "knowledge":
             stage1_out["exact_hits"] = stage1_out.get("exact_hits", [])[:1]
             stage1_out["related_hits"] = stage1_out.get("related_hits", [])[:3] if show_related else []
+        elif (
+            query_mode == "evidence"
+            and not stage2_out.get("structured_fallbacks")
+            and not stage2_out.get("primary_hits")
+            and not stage2_out.get("primary_candidates")
+        ):
+            fallback_pool: list[dict[str, Any]] = []
+            for key in ("exact_hits", "related_hits", "structured_hits"):
+                fallback_pool.extend(stage1_out.get(key, []))
+            fallback_pool.extend(stage.get("stage1", {}).get("hits", []))
+
+            deduped: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for hit in fallback_pool:
+                if hit.get("evidence_level") != "structured":
+                    continue
+                dedup_key = str(hit.get("chunk_id") or hit.get("path") or hit.get("title") or repr(hit))
+                if dedup_key in seen:
+                    continue
+                seen.add(dedup_key)
+                deduped.append({**hit, "status": "candidate_only"})
+            stage2_out["structured_fallbacks"] = deduped
+
+        stage2_out["primary_candidates"] = stage2_out.get("primary_candidates", [])
+        stage2_out["structured_fallbacks"] = stage2_out.get("structured_fallbacks", [])
 
         out = {
             "mode": "search",

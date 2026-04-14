@@ -27,6 +27,7 @@ class KBSearchRetriever:
     PRIMARY_ONLY_PHRASES = {"荧惑守心", "熒惑守心", "月犯心宿", "五星聚", "土木合"}
     PRIMARY_CARD_TYPES = {"fenjuan", "fulltext"}
     STRUCTURED_CARD_TYPES = {"term_card", "zhusu_card", "extract_card"}
+    INVALID_API_KEY_PLACEHOLDERS = {"dev_change_me", "change_me", "please_change_me", "replace_me"}
     def __init__(
         self,
         base_url: str | None = None,
@@ -44,12 +45,14 @@ class KBSearchRetriever:
         self.default_limit = cfg.app_default_limit
 
     def _auth_headers(self) -> dict[str, str]:
-        key = self.api_key
+        key = (self.api_key or "").strip()
         if not key:
             try:
                 key = require_api_key()
             except SettingsError as exc:
                 raise KBSearchError(str(exc)) from exc
+        if key.lower() in self.INVALID_API_KEY_PLACEHOLDERS:
+            raise KBSearchError("Invalid KB_SEARCH_API_KEY: placeholder value detected, please set a real API key")
         return {"Authorization": f"Bearer {key}", "X-API-Key": key}
 
     def _request(
