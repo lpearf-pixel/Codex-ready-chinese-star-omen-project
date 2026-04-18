@@ -219,9 +219,22 @@ python -m src.cli inspect-kb \
 - evidence query 默认行为：
   - `query_mode = evidence`
   - `literal_first = true`
+- `inspect-kb` 语义约束：
+  - `primary_candidates` 只能来自 `fenjuan/fulltext`
+  - 当 `query_mode = evidence` 且无 primary 命中时，`structured_fallbacks` 作为候选线索输出，条目会标记 `status = candidate_only`
 - 元数据优先级：
-  - 若命中结果已带 `book_id/card_type/evidence_level`，优先采用命中字段；
+  - 优先消费上游 flatten 后命中结果的顶层 metadata（`book_id/card_type/evidence_level`）；
   - 仅缺失时才退回路径推断。
+
+### 最小检索评测集
+
+- 评测样例文件：`data/examples/min_retrieval_eval_set.json`
+- 当前包含 5 个最小 query：
+  - `心宿`
+  - `荧惑`
+  - `荧惑守心`
+  - `月犯心宿`
+  - `五星聚`
 
 ### 5) resolve-evidence 调用示例
 
