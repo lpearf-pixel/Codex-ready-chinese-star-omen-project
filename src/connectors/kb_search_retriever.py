@@ -28,6 +28,20 @@ class KBSearchRetriever:
     PRIMARY_CARD_TYPES = {"fenjuan", "fulltext"}
     STRUCTURED_CARD_TYPES = {"term_card", "zhusu_card", "extract_card"}
     INVALID_API_KEY_PLACEHOLDERS = {"dev_change_me", "change_me", "please_change_me", "replace_me"}
+    RETRIEVAL_POOL_SPEC: dict[str, dict[str, list[str]]] = {
+        "knowledge": {
+            "stage1": ["xingguan_card", "zhusu_card", "term_card", "extract_card", "topic_index", "chapter_summary"],
+            "stage2": ["fenjuan", "fulltext"],
+        },
+        "evidence": {
+            "stage1": ["zhusu_card", "term_card", "extract_card"],
+            "stage2": ["fenjuan", "fulltext"],
+        },
+        "support": {
+            "stage1": ["topic_index", "chapter_summary", "extract_card"],
+            "stage2": ["fenjuan", "fulltext"],
+        },
+    }
     def __init__(
         self,
         base_url: str | None = None,
@@ -129,6 +143,16 @@ class KBSearchRetriever:
         for hit in raw_hits:
             upstream_meta = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
             inferred = infer_metadata_from_path(hit.get("path"))
+            path = str(hit.get("path") or "")
+            title = str(hit.get("title") or "")
+            heading_path = hit.get("heading_path") or upstream_meta.get("heading_path") or [title] if title else []
+            volume = hit.get("volume") or upstream_meta.get("volume")
+            if not volume and "卷" in title:
+                volume = title
+            section = hit.get("section") or upstream_meta.get("section") or (heading_path[-1] if heading_path else title or None)
+            source_locator = hit.get("source_locator") or upstream_meta.get("source_locator")
+            if not source_locator:
+                source_locator = f"{volume}/{section}" if volume and section else section or volume or None
             inferred_hits.append(
                 {
                     **hit,
@@ -136,6 +160,11 @@ class KBSearchRetriever:
                     "book_id": hit.get("book_id") or upstream_meta.get("book_id") or inferred.get("book_id"),
                     "card_type": hit.get("card_type") or upstream_meta.get("card_type") or inferred.get("card_type"),
                     "evidence_level": hit.get("evidence_level") or upstream_meta.get("evidence_level") or inferred.get("evidence_level"),
+                    "volume": volume,
+                    "section": section,
+                    "source_locator": source_locator,
+                    "heading_path": heading_path if isinstance(heading_path, list) else [str(heading_path)],
+                    "path": path,
                 }
             )
         return inferred_hits
@@ -301,12 +330,14 @@ class KBSearchRetriever:
         effective_literal_first = literal_first
         if effective_literal_first is None:
             effective_literal_first = effective_query_mode == "evidence"
+        retrieval_pool = self.RETRIEVAL_POOL_SPEC.get(effective_query_mode, self.RETRIEVAL_POOL_SPEC["knowledge"])
         payload: dict[str, Any] = {
             "query": query,
             "top_k": top_k if top_k is not None else self.default_limit,
             "collection": collection or self.default_collection,
             "query_mode": effective_query_mode,
             "literal_first": effective_literal_first,
+            "retrieval_pool": retrieval_pool,
             "query_normalize": self.settings.kb_search_query_normalize,
             "query_s2t": self.settings.kb_search_query_s2t,
             "query_t2s": self.settings.kb_search_query_t2s,
@@ -340,6 +371,8 @@ class KBSearchRetriever:
             "query_mode": mode,
             "literal_first": effective_literal_first,
             "literal_pool_factor": literal_pool_factor,
+            "payload_contract_version": "v2",
+            "retrieval_pool_spec": retrieval_pool,
             "normalized_query": normalized_query,
             "query_variants": query_variants,
             "raw_hits": raw_hits,
