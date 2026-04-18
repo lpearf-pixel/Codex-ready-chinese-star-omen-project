@@ -127,14 +127,15 @@ class KBSearchRetriever:
     def _normalize_hits(raw_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
         inferred_hits: list[dict[str, Any]] = []
         for hit in raw_hits:
+            upstream_meta = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
             inferred = infer_metadata_from_path(hit.get("path"))
             inferred_hits.append(
                 {
                     **hit,
-                    "book_title": hit.get("book_title") or inferred.get("book_title"),
-                    "book_id": hit.get("book_id") or inferred.get("book_id"),
-                    "card_type": hit.get("card_type") or inferred.get("card_type"),
-                    "evidence_level": hit.get("evidence_level") or inferred.get("evidence_level"),
+                    "book_title": hit.get("book_title") or upstream_meta.get("book_title") or inferred.get("book_title"),
+                    "book_id": hit.get("book_id") or upstream_meta.get("book_id") or inferred.get("book_id"),
+                    "card_type": hit.get("card_type") or upstream_meta.get("card_type") or inferred.get("card_type"),
+                    "evidence_level": hit.get("evidence_level") or upstream_meta.get("evidence_level") or inferred.get("evidence_level"),
                 }
             )
         return inferred_hits

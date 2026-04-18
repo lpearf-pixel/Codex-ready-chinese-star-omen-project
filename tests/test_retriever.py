@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from src.connectors.kb_search_retriever import KBSearchError, KBSearchRetriever
 
 
@@ -201,3 +204,62 @@ def test_hit_metadata_priority_over_path_inference(monkeypatch):
     out = r.retrieve("心宿")
     assert out["hits"][0]["card_type"] == "fenjuan"
     assert out["hits"][0]["book_id"] == "override_book"
+
+
+def test_flattened_top_level_metadata_is_preferred(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
+        return {
+            "hits": [
+                {
+                    "chunk_id": "x1",
+                    "title": "荧惑守心",
+                    "path": "/docs/古籍/唐開元占經/术语卡片/荧惑守心.md",
+                    "snippet": "荧惑守心",
+                    "book_id": "top_level_book",
+                    "card_type": "fenjuan",
+                    "evidence_level": "primary",
+                    "metadata": {
+                        "book_id": "nested_book",
+                        "card_type": "term_card",
+                        "evidence_level": "structured",
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.retrieve("荧惑守心")
+    assert out["hits"][0]["book_id"] == "top_level_book"
+    assert out["hits"][0]["card_type"] == "fenjuan"
+    assert out["hits"][0]["evidence_level"] == "primary"
+
+
+def test_min_retrieval_eval_set_defaults():
+    eval_path = Path("data/examples/min_retrieval_eval_set.json")
+    rows = json.loads(eval_path.read_text(encoding="utf-8"))
+    assert [item["query"] for item in rows] == ["心宿", "荧惑", "荧惑守心", "月犯心宿", "五星聚"]
+
+    for item in rows:
+        mode = KBSearchRetriever._query_mode(item["query"])
+        assert mode == item["expected_query_mode"]
+
+
+def test_min_retrieval_eval_set_literal_first_defaults(monkeypatch):
+    captured_payloads = []
+
+    def fake_request(self, method, path, **kwargs):
+        captured_payloads.append(kwargs["json_payload"])
+        return {"hits": []}
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+
+    rows = json.loads(Path("data/examples/min_retrieval_eval_set.json").read_text(encoding="utf-8"))
+    for item in rows:
+        r.retrieve(item["query"])
+
+    assert len(captured_payloads) == 5
+    for row, payload in zip(rows, captured_payloads):
+        assert payload["query_mode"] == row["expected_query_mode"]
+        assert payload["literal_first"] == row["expected_literal_first"]
