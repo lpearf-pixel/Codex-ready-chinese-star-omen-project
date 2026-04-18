@@ -49,6 +49,8 @@ def test_retrieve_request_payload(monkeypatch):
     assert captured["payload"]["query_mode"] == "knowledge"
     assert captured["payload"]["literal_first"] is False
     assert captured["payload"]["literal_pool_factor"] == 3
+    assert captured["payload"]["retrieval_pool"]["stage1"]
+    assert captured["payload"]["retrieval_pool"]["stage2"] == ["fenjuan", "fulltext"]
     assert captured["payload"]["collection"] == "local_kb_default"
 
 
@@ -233,6 +235,31 @@ def test_flattened_top_level_metadata_is_preferred(monkeypatch):
     assert out["hits"][0]["book_id"] == "top_level_book"
     assert out["hits"][0]["card_type"] == "fenjuan"
     assert out["hits"][0]["evidence_level"] == "primary"
+
+
+def test_anchor_fields_are_present_in_normalized_hit(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
+        return {
+            "hits": [
+                {
+                    "chunk_id": "x1",
+                    "title": "卷十二",
+                    "path": "/docs/古籍/唐開元占經/分卷/卷十二.md",
+                    "snippet": "荧惑守心",
+                    "card_type": "fenjuan",
+                    "evidence_level": "primary",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.retrieve("荧惑守心")
+    hit = out["hits"][0]
+    assert hit["volume"] == "卷十二"
+    assert hit["section"] == "卷十二"
+    assert hit["source_locator"] == "卷十二/卷十二"
+    assert hit["heading_path"] == ["卷十二"]
 
 
 def test_min_retrieval_eval_set_defaults():

@@ -212,6 +212,7 @@ python -m src.cli inspect-kb \
   - `query_mode`
   - `literal_first`
   - `literal_pool_factor`
+  - `retrieval_pool`（下游固化 pool spec，按 `query_mode` 自动给出 stage1/stage2 card_type 池）
 - query intent 会收敛到 `query_mode`：
   - entity query → `knowledge`
   - evidence query → `evidence`
@@ -222,6 +223,10 @@ python -m src.cli inspect-kb \
 - `inspect-kb` 语义约束：
   - `primary_candidates` 只能来自 `fenjuan/fulltext`
   - 当 `query_mode = evidence` 且无 primary 命中时，`structured_fallbacks` 作为候选线索输出，条目会标记 `status = candidate_only`
+- 检索输出固定包含：
+  - `payload_contract_version = v2`
+  - `retrieval_pool_spec`
+  - 锚点字段优先补齐：`volume / section / source_locator / heading_path`
 - 元数据优先级：
   - 优先消费上游 flatten 后命中结果的顶层 metadata（`book_id/card_type/evidence_level`）；
   - 仅缺失时才退回路径推断。
