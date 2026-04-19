@@ -287,6 +287,27 @@ python scripts/kb_search_smoke.py --mode live --collection local_kb_default
 python scripts/kb_search_smoke.py --mode corpus-eval
 ```
 
+## Eval 回归命令（Sprint 3）
+
+```bash
+python -m src.cli eval-corpus
+```
+
+- `smoke`：链路活性检查（健康检查、payload flatten、基础 query 可用性）
+- `eval`：质量回归检查（固定 query 集 + 期望对比 + pass/fail 摘要）
+
+## Corpus 版本追踪（Sprint 3）
+
+- manifest：`data/corpus_manifest.json`
+- 变更记录：`docs/corpus-change-log.md`
+- 版本规则：`docs/corpus-versioning.md`
+
+## 自动化天象分析接口边界（仅接口）
+
+- 接口定义：`src/interfaces/astronomy.py`
+- 说明文档：`docs/automation-interface-boundary.md`
+- 当前仅定义边界，不含完整天文计算实现。
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`

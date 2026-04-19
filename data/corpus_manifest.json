@@ -1,0 +1,21 @@
+{
+  "corpus_version": "0.3.0",
+  "generated_at": "2026-04-19T00:00:00Z",
+  "kb_book_ids": ["kaiyuan_zhanjing"],
+  "supported_card_types": [
+    "fenjuan",
+    "fulltext",
+    "xingguan_card",
+    "zhusu_card",
+    "term_card",
+    "extract_card",
+    "topic_index",
+    "chapter_summary",
+    "nav",
+    "prompt_asset",
+    "qa_example"
+  ],
+  "supported_evidence_levels": ["primary", "structured", "index", "prompt", "example"],
+  "ingest_version": "kb-ingest-v2",
+  "notes": "Sprint 3 baseline manifest for regression and corpus change tracking"
+}
