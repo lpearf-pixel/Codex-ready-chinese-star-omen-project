@@ -226,7 +226,7 @@ python -m src.cli inspect-kb \
 - 检索输出固定包含：
   - `payload_contract_version = v2`
   - `retrieval_pool_spec`
-  - 锚点字段优先补齐：`volume / section / source_locator / heading_path`
+  - 锚点字段优先补齐：`volume / section / source_locator / heading_path / anchor_text`
 - 元数据优先级：
   - 优先消费上游 flatten 后命中结果的顶层 metadata（`book_id/card_type/evidence_level`）；
   - 仅缺失时才退回路径推断。
@@ -253,6 +253,21 @@ python -m src.cli resolve-evidence \
 - `Missing API key`：未设置 `KB_SEARCH_API_KEY`，请先 `export KB_SEARCH_API_KEY=...`。
 - `Connection refused`：kb-search 未启动或端口不对，检查 `make up` 和 `KB_SEARCH_API_PORT`。
 - 只有 `structured_hits` 没有 `primary_hits`：当前只能作为“线索/候选解释”，不可作为最终事实证据。
+
+## Smoke 检查脚本（health / knowledge / evidence / Qdrant payload）
+
+- 脚本位置：`scripts/kb_search_smoke.py`
+- payload 合约检查（默认，不依赖在线服务）：
+
+```bash
+python scripts/kb_search_smoke.py --mode payload-check
+```
+
+- 在线检查（需要可访问 kb-search）：
+
+```bash
+python scripts/kb_search_smoke.py --mode live --collection local_kb_default
+```
 
 ## 测试报告入口
 

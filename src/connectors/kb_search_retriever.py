@@ -153,6 +153,9 @@ class KBSearchRetriever:
             source_locator = hit.get("source_locator") or upstream_meta.get("source_locator")
             if not source_locator:
                 source_locator = f"{volume}/{section}" if volume and section else section or volume or None
+            anchor_text = hit.get("anchor_text") or upstream_meta.get("anchor_text")
+            if not anchor_text:
+                anchor_text = str(hit.get("snippet") or "")[:120]
             inferred_hits.append(
                 {
                     **hit,
@@ -164,6 +167,7 @@ class KBSearchRetriever:
                     "section": section,
                     "source_locator": source_locator,
                     "heading_path": heading_path if isinstance(heading_path, list) else [str(heading_path)],
+                    "anchor_text": anchor_text,
                     "path": path,
                 }
             )

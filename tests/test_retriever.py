@@ -260,6 +260,18 @@ def test_anchor_fields_are_present_in_normalized_hit(monkeypatch):
     assert hit["section"] == "卷十二"
     assert hit["source_locator"] == "卷十二/卷十二"
     assert hit["heading_path"] == ["卷十二"]
+    assert hit["anchor_text"].startswith("荧惑守心")
+
+
+def test_retrieve_output_contains_payload_contract_spec(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
+        return {"hits": []}
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.retrieve("心宿")
+    assert out["payload_contract_version"] == "v2"
+    assert out["retrieval_pool_spec"]["stage2"] == ["fenjuan", "fulltext"]
 
 
 def test_min_retrieval_eval_set_defaults():
