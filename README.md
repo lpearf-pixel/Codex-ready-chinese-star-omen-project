@@ -234,12 +234,24 @@ python -m src.cli inspect-kb \
 ### 最小检索评测集
 
 - 评测样例文件：`data/examples/min_retrieval_eval_set.json`
+- Sprint 2 评测集（用于可执行验收）：`eval/corpus_eval_cases.yaml`
+- 评测规范：`docs/corpus-eval-spec.md`
 - 当前包含 5 个最小 query：
   - `心宿`
   - `荧惑`
   - `荧惑守心`
   - `月犯心宿`
   - `五星聚`
+
+### 原文锚点化（Sprint 2）
+
+- 原文层输出字段：`volume / section / source_locator / heading_path / anchor_text / paragraph_index(可选)`
+- `resolve-evidence` 输出将携带这些字段，定位粒度可达卷/节/heading，不再仅是文件级。
+
+### 排除规则与切块策略
+
+- 排除规则文档：`docs/retrieval-exclusion-rules.md`
+- 切块策略文档：`docs/chunking-strategy-spec.md`
 
 ### 5) resolve-evidence 调用示例
 
@@ -268,6 +280,33 @@ python scripts/kb_search_smoke.py --mode payload-check
 ```bash
 python scripts/kb_search_smoke.py --mode live --collection local_kb_default
 ```
+
+- 评测集模式（离线校验 `eval/corpus_eval_cases.yaml` 的 query_mode 预期）：
+
+```bash
+python scripts/kb_search_smoke.py --mode corpus-eval
+```
+
+## Eval 回归命令（Sprint 3）
+
+```bash
+python -m src.cli eval-corpus
+```
+
+- `smoke`：链路活性检查（健康检查、payload flatten、基础 query 可用性）
+- `eval`：质量回归检查（固定 query 集 + 期望对比 + pass/fail 摘要）
+
+## Corpus 版本追踪（Sprint 3）
+
+- manifest：`data/corpus_manifest.json`
+- 变更记录：`docs/corpus-change-log.md`
+- 版本规则：`docs/corpus-versioning.md`
+
+## 自动化天象分析接口边界（仅接口）
+
+- 接口定义：`src/interfaces/astronomy.py`
+- 说明文档：`docs/automation-interface-boundary.md`
+- 当前仅定义边界，不含完整天文计算实现。
 
 ## 测试报告入口
 

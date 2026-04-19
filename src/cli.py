@@ -23,6 +23,7 @@ from src.connectors.evidence_resolver import resolve_evidence
 from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_CARD_TYPES, is_citable_evidence
 from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
+from src.eval.corpus_eval import run_corpus_eval
 
 app = typer.Typer(help="Chinese astro model CLI") if typer else None
 
@@ -197,6 +198,12 @@ def resolve_evidence_impl(rule: Path, kb_root: Path | None = None, strict: bool 
         "locator": resolved.get("locator"),
         "anchor_heading": resolved.get("anchor_heading"),
         "quote": resolved.get("quote"),
+        "volume": resolved.get("volume"),
+        "section": resolved.get("section"),
+        "source_locator": resolved.get("source_locator"),
+        "heading_path": resolved.get("heading_path"),
+        "anchor_text": resolved.get("anchor_text"),
+        "paragraph_index": resolved.get("paragraph_index"),
         "ingest_source": resolved.get("ingest_source"),
         "source_type": resolved.get("source_type"),
         "evidence_level": resolved.get("evidence_level"),
@@ -313,6 +320,19 @@ if typer:
         typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
+    @app.command("eval-corpus")
+    def eval_corpus(
+        eval_path: Path = typer.Option(Path("eval/corpus_eval_cases.yaml"), "--eval-path"),
+        collection: str | None = typer.Option(None, "--collection"),
+        top_k: int | None = typer.Option(None, "--top-k"),
+        base_url: str | None = typer.Option(None, "--base-url"),
+        api_key: str | None = typer.Option(None, "--api-key"),
+    ):
+        retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
+        out = run_corpus_eval(eval_path=eval_path, retriever=retriever, collection=collection, top_k=top_k)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
 
 def _main_fallback():  # pragma: no cover
     parser = argparse.ArgumentParser(description="Chinese astro model CLI")
@@ -338,6 +358,12 @@ def _main_fallback():  # pragma: no cover
     p_resolve.add_argument("--kb-root")
     p_resolve.add_argument("--pretty", action="store_true")
     p_resolve.add_argument("--strict", action="store_true")
+    p_eval = sub.add_parser("eval-corpus")
+    p_eval.add_argument("--eval-path", default="eval/corpus_eval_cases.yaml")
+    p_eval.add_argument("--collection")
+    p_eval.add_argument("--top-k", type=int, default=None)
+    p_eval.add_argument("--base-url")
+    p_eval.add_argument("--api-key")
 
     args = parser.parse_args()
     if args.cmd == "validate-data":
@@ -366,6 +392,10 @@ def _main_fallback():  # pragma: no cover
                 print("当前仅为候选证据")
         else:
             print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "eval-corpus":
+        retriever = KBSearchRetriever(base_url=args.base_url, api_key=args.api_key)
+        out = run_corpus_eval(eval_path=Path(args.eval_path), retriever=retriever, collection=args.collection, top_k=args.top_k)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -154,7 +154,18 @@ def test_resolve_evidence_output_contains_required_fields(tmp_path):
     result = runner.invoke(app, ["resolve-evidence", "--rule", str(p)])
     assert result.exit_code == 0
     body = json.loads(result.stdout)
-    for field in ["relative_path", "locator", "quote", "card_type", "evidence_level"]:
+    for field in [
+        "relative_path",
+        "locator",
+        "quote",
+        "card_type",
+        "evidence_level",
+        "volume",
+        "section",
+        "source_locator",
+        "heading_path",
+        "anchor_text",
+    ]:
         assert field in body
 
 

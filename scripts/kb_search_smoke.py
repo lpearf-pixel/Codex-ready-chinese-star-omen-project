@@ -15,6 +15,7 @@ from src.connectors.kb_search_retriever import KBSearchRetriever
 
 
 MIN_QUERIES = ["心宿", "荧惑", "荧惑守心", "月犯心宿", "五星聚"]
+EVAL_PATH = ROOT / "eval" / "corpus_eval_cases.yaml"
 
 
 def run_live(collection: str | None = None) -> dict[str, Any]:
@@ -71,14 +72,69 @@ def run_payload_check() -> dict[str, Any]:
     }
 
 
+def _load_eval_cases() -> list[dict[str, Any]]:
+    try:
+        import yaml  # type: ignore
+
+        parsed = yaml.safe_load(EVAL_PATH.read_text(encoding="utf-8")) or {}
+        return parsed.get("cases", [])
+    except Exception:
+        cases: list[dict[str, Any]] = []
+        current: dict[str, Any] | None = None
+        for raw in EVAL_PATH.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or line == "cases:":
+                continue
+            if line.startswith("- "):
+                if current:
+                    cases.append(current)
+                current = {}
+                line = line[2:]
+            if ":" in line and current is not None:
+                k, v = line.split(":", 1)
+                current[k.strip()] = v.strip().strip('"')
+        if current:
+            cases.append(current)
+        return cases
+
+
+def run_corpus_eval() -> dict[str, Any]:
+    retriever = KBSearchRetriever(base_url="http://127.0.0.1:9999", api_key="smoke_key")
+    captured: list[dict[str, Any]] = []
+
+    def fake_request(self, method, path, **kwargs):
+        captured.append(kwargs.get("json_payload") or {})
+        return {"hits": []}
+
+    retriever._request = fake_request.__get__(retriever, KBSearchRetriever)  # type: ignore[attr-defined]
+    cases = _load_eval_cases()
+    rows = []
+    for case in cases:
+        q = case.get("query")
+        if not q:
+            continue
+        out = retriever.retrieve(str(q))
+        rows.append(
+            {
+                "query": q,
+                "expected_mode": case.get("query_mode"),
+                "actual_mode": out.get("query_mode"),
+                "mode_match": out.get("query_mode") == case.get("query_mode"),
+            }
+        )
+    return {"mode": "corpus_eval", "cases": rows, "all_mode_match": all(row["mode_match"] for row in rows)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="kb-search smoke script")
-    parser.add_argument("--mode", choices=["live", "payload-check"], default="payload-check")
+    parser.add_argument("--mode", choices=["live", "payload-check", "corpus-eval"], default="payload-check")
     parser.add_argument("--collection", default=None)
     args = parser.parse_args()
 
     if args.mode == "live":
         out = run_live(collection=args.collection)
+    elif args.mode == "corpus-eval":
+        out = run_corpus_eval()
     else:
         out = run_payload_check()
     print(json.dumps(out, ensure_ascii=False, indent=2))
