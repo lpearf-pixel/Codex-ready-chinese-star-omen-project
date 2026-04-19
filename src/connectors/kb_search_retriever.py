@@ -24,6 +24,7 @@ class KBSearchRetriever:
     TRADITIONAL_MAP = str.maketrans({"荧": "熒", "并": "併"})
     SIMPLIFIED_MAP = str.maketrans({"熒": "荧", "併": "并"})
     EVIDENCE_EXCLUDED_CARD_TYPES = {"prompt_asset", "nav", "qa_example"}
+    FACT_EXCLUDED_CARD_TYPES = {"qa_example"}
     PRIMARY_ONLY_PHRASES = {"荧惑守心", "熒惑守心", "月犯心宿", "五星聚", "土木合"}
     PRIMARY_CARD_TYPES = {"fenjuan", "fulltext"}
     STRUCTURED_CARD_TYPES = {"term_card", "zhusu_card", "extract_card"}
@@ -357,6 +358,8 @@ class KBSearchRetriever:
         filtered_hits = reranked
         normalized_query = self._normalize_query(query)
         query_variants = self._query_variants(query)
+        if mode in {"knowledge", "evidence"}:
+            filtered_hits = [h for h in filtered_hits if h.get("card_type") not in self.FACT_EXCLUDED_CARD_TYPES]
         if mode == "evidence":
             filtered_hits = [h for h in filtered_hits if h.get("card_type") not in self.EVIDENCE_EXCLUDED_CARD_TYPES]
 
@@ -503,6 +506,10 @@ class KBSearchRetriever:
         stage2_exact = [h for h in stage2_exact if h.get("card_type") in self.PRIMARY_CARD_TYPES][:3]
         stage2_related = [h for h in primary_candidates if h not in stage2_exact][:3]
         structured_fallbacks = []
+        if mode == "support":
+            primary_candidates = []
+            stage2_exact = []
+            stage2_related = []
         if mode == "evidence" and not primary_candidates:
             structured_fallbacks = [
                 {**h, "status": "candidate_only"}

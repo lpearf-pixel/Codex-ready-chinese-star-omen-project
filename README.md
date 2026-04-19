@@ -234,12 +234,24 @@ python -m src.cli inspect-kb \
 ### 最小检索评测集
 
 - 评测样例文件：`data/examples/min_retrieval_eval_set.json`
+- Sprint 2 评测集（用于可执行验收）：`eval/corpus_eval_cases.yaml`
+- 评测规范：`docs/corpus-eval-spec.md`
 - 当前包含 5 个最小 query：
   - `心宿`
   - `荧惑`
   - `荧惑守心`
   - `月犯心宿`
   - `五星聚`
+
+### 原文锚点化（Sprint 2）
+
+- 原文层输出字段：`volume / section / source_locator / heading_path / anchor_text / paragraph_index(可选)`
+- `resolve-evidence` 输出将携带这些字段，定位粒度可达卷/节/heading，不再仅是文件级。
+
+### 排除规则与切块策略
+
+- 排除规则文档：`docs/retrieval-exclusion-rules.md`
+- 切块策略文档：`docs/chunking-strategy-spec.md`
 
 ### 5) resolve-evidence 调用示例
 
@@ -267,6 +279,12 @@ python scripts/kb_search_smoke.py --mode payload-check
 
 ```bash
 python scripts/kb_search_smoke.py --mode live --collection local_kb_default
+```
+
+- 评测集模式（离线校验 `eval/corpus_eval_cases.yaml` 的 query_mode 预期）：
+
+```bash
+python scripts/kb_search_smoke.py --mode corpus-eval
 ```
 
 ## 测试报告入口

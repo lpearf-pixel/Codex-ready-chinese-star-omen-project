@@ -88,6 +88,21 @@ def test_evidence_mode_filters_prompt_and_nav(monkeypatch):
     assert "p1" not in ids and "n1" not in ids
 
 
+def test_qa_example_excluded_from_knowledge(monkeypatch):
+    def fake_request(self, method, path, **kwargs):
+        return {
+            "hits": [
+                {"chunk_id": "q1", "title": "样例", "path": "/docs/问答样例库/x.md", "snippet": "心宿", "card_type": "qa_example"},
+                {"chunk_id": "k1", "title": "心宿", "path": "/docs/古籍/唐開元占經/逐宿卡/心宿.md", "snippet": "心宿", "card_type": "zhusu_card"},
+            ]
+        }
+
+    monkeypatch.setattr(KBSearchRetriever, "_request", fake_request)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.retrieve("心宿")
+    assert [h["chunk_id"] for h in out["hits"]] == ["k1"]
+
+
 def test_phrase_fallback_finds_primary_candidate(monkeypatch):
     def fake_request(self, method, path, **kwargs):
         return {
@@ -272,6 +287,21 @@ def test_retrieve_output_contains_payload_contract_spec(monkeypatch):
     out = r.retrieve("心宿")
     assert out["payload_contract_version"] == "v2"
     assert out["retrieval_pool_spec"]["stage2"] == ["fenjuan", "fulltext"]
+
+
+def test_support_mode_not_output_primary_candidates(monkeypatch):
+    monkeypatch.setattr(KBSearchRetriever, "_request", lambda self, method, path, **kwargs: {"hits": []})
+    monkeypatch.setattr(
+        KBSearchRetriever,
+        "_scan_primary_files",
+        lambda self, query, book_id, mode, limit=3, query_variants=None: (
+            [{"chunk_id": "p1", "card_type": "fenjuan", "title": "卷十二", "snippet": "说明性内容"}],
+            {"files_scanned": 1, "matched_files": [], "matched_headings": []},
+        ),
+    )
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
+    out = r.two_stage_retrieve("如何理解荧惑守心", query_mode="support")
+    assert out["stage2"]["primary_candidates"] == []
 
 
 def test_min_retrieval_eval_set_defaults():
