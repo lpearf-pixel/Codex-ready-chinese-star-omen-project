@@ -1,0 +1,11 @@
+{
+  "id": "event_five_planets_gathering_demo",
+  "datetime_utc": "2026-03-20T06:00:00Z",
+  "body": "other",
+  "event_type": "gathering",
+  "target_asterism": "multi_planet",
+  "related_asterisms": ["mercury", "venus", "mars", "jupiter", "saturn"],
+  "epoch": "J2000",
+  "raw_calc_source": "demo_ephemeris_stub",
+  "notes": "五星聚 demo input"
+}

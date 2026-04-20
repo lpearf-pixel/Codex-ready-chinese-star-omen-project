@@ -24,6 +24,7 @@ from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_
 from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
 from src.eval.corpus_eval import run_corpus_eval
+from src.rule_engine.minimal_matcher import run_match_rule
 
 app = typer.Typer(help="Chinese astro model CLI") if typer else None
 
@@ -333,6 +334,16 @@ if typer:
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
+    @app.command("match-rule")
+    def match_rule(
+        event: Path = typer.Option(..., "--event"),
+        rules_path: Path = typer.Option(Path("data/processed/corpus/sample_rules.json"), "--rules-path"),
+        kb_root: Path | None = typer.Option(None, "--kb-root"),
+    ):
+        out = run_match_rule(event_path=event, rules_path=rules_path, kb_root=kb_root)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
 
 def _main_fallback():  # pragma: no cover
     parser = argparse.ArgumentParser(description="Chinese astro model CLI")
@@ -364,6 +375,10 @@ def _main_fallback():  # pragma: no cover
     p_eval.add_argument("--top-k", type=int, default=None)
     p_eval.add_argument("--base-url")
     p_eval.add_argument("--api-key")
+    p_match = sub.add_parser("match-rule")
+    p_match.add_argument("--event", required=True)
+    p_match.add_argument("--rules-path", default="data/processed/corpus/sample_rules.json")
+    p_match.add_argument("--kb-root")
 
     args = parser.parse_args()
     if args.cmd == "validate-data":
@@ -395,6 +410,9 @@ def _main_fallback():  # pragma: no cover
     elif args.cmd == "eval-corpus":
         retriever = KBSearchRetriever(base_url=args.base_url, api_key=args.api_key)
         out = run_corpus_eval(eval_path=Path(args.eval_path), retriever=retriever, collection=args.collection, top_k=args.top_k)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "match-rule":
+        out = run_match_rule(event_path=Path(args.event), rules_path=Path(args.rules_path), kb_root=Path(args.kb_root) if args.kb_root else None)
         print(json.dumps(out, ensure_ascii=False, indent=2))
 
 

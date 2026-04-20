@@ -1,0 +1,21 @@
+cases:
+  - input_event_id: event_mars_guarding_xin_demo
+    event_path: data/examples/events/mars_guarding_xin_demo.json
+    expected_rule_ids: [rule_mars_guarding_xin_001]
+    must_have_primary_evidence: true
+    allow_structured_fallback: false
+  - input_event_id: event_moon_invading_xin_demo
+    event_path: data/examples/events/moon_invading_xin_demo.json
+    expected_rule_ids: [rule_moon_invading_xin_001]
+    must_have_primary_evidence: false
+    allow_structured_fallback: true
+  - input_event_id: event_five_planets_gathering_demo
+    event_path: data/examples/events/five_planets_gathering_demo.json
+    expected_rule_ids: [rule_five_planets_gathering_001]
+    must_have_primary_evidence: false
+    allow_structured_fallback: true
+  - input_event_id: event_jupiter_saturn_conjunction_demo
+    event_path: data/examples/events/jupiter_saturn_conjunction_demo.json
+    expected_rule_ids: [rule_jupiter_saturn_conjunction_001]
+    must_have_primary_evidence: false
+    allow_structured_fallback: true

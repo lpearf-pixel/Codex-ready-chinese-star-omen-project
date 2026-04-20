@@ -308,6 +308,43 @@ python -m src.cli eval-corpus
 - 说明文档：`docs/automation-interface-boundary.md`
 - 当前仅定义边界，不含完整天文计算实现。
 
+## Sprint 4：最小可计算闭环（非完整天文实现）
+
+- 本阶段目标：
+  - 定义最小 `CelestialEvent` 输入协议与样例
+  - 跑通 `CelestialEvent -> OmenRule -> evidence` 最小闭环
+  - 增加规则匹配评测集与 demo CLI
+- 非目标：
+  - 不实现完整天文计算
+  - 不做批量自动推演
+  - 不扩展大规模回测
+
+### 最小事件输入示例
+
+- `data/examples/events/mars_guarding_xin_demo.json`
+- `data/examples/events/moon_invading_xin_demo.json`
+- `data/examples/events/five_planets_gathering_demo.json`
+
+### match-rule demo
+
+```bash
+python -m src.cli match-rule --event data/examples/events/mars_guarding_xin_demo.json
+```
+
+规则匹配评测集：
+- `eval/rule_match_eval_cases.yaml`
+- `docs/rule-match-eval-spec.md`
+
+输出包含：
+- `matched_rule_ids`
+- `trigger_match_reason`
+- `effect_domain`
+- `severity`
+- `time_window`
+- `evidence_summary`
+- `primary_evidence_found`
+- `candidate_only`
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`
