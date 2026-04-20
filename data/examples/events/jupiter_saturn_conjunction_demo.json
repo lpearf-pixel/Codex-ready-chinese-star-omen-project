@@ -1,0 +1,11 @@
+{
+  "id": "event_jupiter_saturn_conjunction_demo",
+  "datetime_utc": "2026-04-01T00:00:00Z",
+  "body": "jupiter",
+  "event_type": "conjunction",
+  "target_asterism": "saturn",
+  "related_asterisms": ["saturn"],
+  "epoch": "J2000",
+  "raw_calc_source": "demo_ephemeris_stub",
+  "notes": "土木合 demo input"
+}
