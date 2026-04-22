@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CelestialEvent",
+  "type": "object",
+  "required": ["id", "datetime_utc", "body", "event_type", "epoch"],
+  "properties": {
+    "id": { "type": "string" },
+    "datetime_utc": { "type": "string", "format": "date-time" },
+    "body": {
+      "type": "string",
+      "enum": ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "comet", "guest_star", "other"]
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["guarding", "invading", "conjunction", "gathering", "retrograde", "stationary", "eclipse", "entering_mansion", "occultation", "other"]
+    },
+    "target_asterism": { "type": "string" },
+    "related_asterisms": { "type": "array", "items": { "type": "string" } },
+    "angular_distance_deg": { "type": "number", "minimum": 0 },
+    "visibility": {
+      "type": "object",
+      "properties": {
+        "is_visible": { "type": "boolean" },
+        "altitude_deg": { "type": "number" },
+        "azimuth_deg": { "type": "number" },
+        "limiting_notes": { "type": "string" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "lon": { "type": "number" },
+        "lat": { "type": "number" },
+        "name": { "type": "string" }
+      }
+    },
+    "epoch": { "type": "string" },
+    "raw_calc_source": { "type": "string" },
+    "notes": { "type": "string" }
+  }
+}

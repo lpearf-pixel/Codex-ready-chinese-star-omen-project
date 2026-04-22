@@ -1,0 +1,32 @@
+[
+  {
+    "id": "rule_mars_guarding_xin_high_priority",
+    "source_text": "荧惑守心（高优先）",
+    "source_book": "开元占经",
+    "rule_priority": 10,
+    "conflict_group": "mars_guarding_xin",
+    "resolution_policy": "highest_score",
+    "evidence": {
+      "relative_path": "docs/古籍/唐開元占經/分卷/卷十二.md",
+      "card_type": "fenjuan",
+      "locator": "卷十二/荧惑占/第三段",
+      "quote": "荧惑守心"
+    },
+    "trigger": {"body": "mars", "event_type": "guarding", "target": "xin_xiu", "qualifiers": []},
+    "effect_domain": ["politics"],
+    "severity": "high",
+    "time_window": "0-90d"
+  },
+  {
+    "id": "rule_mars_guarding_xin_low_priority",
+    "source_text": "荧惑守心（低优先）",
+    "source_book": "开元占经",
+    "rule_priority": 50,
+    "conflict_group": "mars_guarding_xin",
+    "resolution_policy": "highest_score",
+    "trigger": {"body": "mars", "event_type": "guarding", "target": "xin_xiu", "qualifiers": []},
+    "effect_domain": ["general_omen"],
+    "severity": "medium",
+    "time_window": "0-30d"
+  }
+]

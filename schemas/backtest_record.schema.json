@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BacktestRecord",
+  "type": "object",
+  "required": ["id", "event_id", "matched_rules", "review_status"],
+  "properties": {
+    "id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "matched_rules": { "type": "array", "items": { "type": "string" } },
+    "historical_or_realworld_event": { "type": "array", "items": { "type": "string" } },
+    "event_date_range": {
+      "type": "object",
+      "properties": {
+        "start": { "type": "string" },
+        "end": { "type": "string" }
+      }
+    },
+    "lead_time_days": { "type": "number" },
+    "precision_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "recall_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "false_positive_risk": { "type": "number", "minimum": 0, "maximum": 1 },
+    "review_status": {
+      "type": "string",
+      "enum": ["auto_generated", "manual_reviewed", "rejected", "needs_more_evidence"]
+    },
+    "review_notes": { "type": "string" }
+  }
+}

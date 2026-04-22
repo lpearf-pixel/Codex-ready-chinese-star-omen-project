@@ -1,0 +1,68 @@
+cases:
+  # positive
+  - input_event_id: event_mars_guarding_xin_demo
+    event_path: data/examples/events/mars_guarding_xin_demo.json
+    expected_rule_ids: [rule_mars_guarding_xin_001]
+    must_have_primary_evidence: true
+    allow_structured_fallback: false
+    expected_match_status: matched
+  - input_event_id: event_moon_invading_xin_demo
+    event_path: data/examples/events/moon_invading_xin_demo.json
+    expected_rule_ids: [rule_moon_invading_xin_001]
+    must_have_primary_evidence: false
+    allow_structured_fallback: true
+    expected_match_status: candidate_only
+  - input_event_id: event_five_planets_gathering_demo
+    event_path: data/examples/events/five_planets_gathering_demo.json
+    expected_rule_ids: [rule_five_planets_gathering_001]
+    must_have_primary_evidence: false
+    allow_structured_fallback: true
+    expected_match_status: candidate_only
+  - input_event_id: event_jupiter_saturn_conjunction_demo
+    event_path: data/examples/events/jupiter_saturn_conjunction_demo.json
+    expected_rule_ids: [rule_jupiter_saturn_conjunction_001]
+    must_have_primary_evidence: false
+    allow_structured_fallback: true
+    expected_match_status: candidate_only
+
+  # negative
+  - input_event_id: event_body_mismatch_demo
+    event_path: data/examples/events/body_mismatch_demo.json
+    expected_rule_ids: []
+    must_have_primary_evidence: false
+    allow_structured_fallback: false
+    expected_match_status: not_matched
+  - input_event_id: event_target_mismatch_demo
+    event_path: data/examples/events/target_mismatch_demo.json
+    expected_rule_ids: []
+    must_have_primary_evidence: false
+    allow_structured_fallback: false
+    expected_match_status: not_matched
+  - input_event_id: event_event_type_mismatch_demo
+    event_path: data/examples/events/event_type_mismatch_demo.json
+    expected_rule_ids: []
+    must_have_primary_evidence: false
+    allow_structured_fallback: false
+    expected_match_status: not_matched
+
+  # boundary
+  - input_event_id: event_threshold_boundary_demo
+    event_path: data/examples/events/threshold_boundary_demo.json
+    expected_rule_ids: [rule_mars_guarding_xin_001]
+    must_have_primary_evidence: true
+    allow_structured_fallback: false
+    expected_match_status: matched
+  - input_event_id: event_multi_rule_conflict_demo
+    event_path: data/examples/events/mars_guarding_xin_demo.json
+    rules_path: data/examples/rules/conflict_rules_demo.json
+    expected_rule_ids: [rule_mars_guarding_xin_high_priority, rule_mars_guarding_xin_low_priority]
+    must_have_primary_evidence: false
+    allow_structured_fallback: true
+    expected_match_status: matched
+  - input_event_id: event_structured_only_demo
+    event_path: data/examples/events/structured_only_demo.json
+    rules_path: data/examples/rules/structured_only_rules_demo.json
+    expected_rule_ids: [rule_mars_guarding_xin_structured_only]
+    must_have_primary_evidence: false
+    allow_structured_fallback: true
+    expected_match_status: candidate_only
