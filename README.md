@@ -345,6 +345,29 @@ python -m src.cli match-rule --event data/examples/events/mars_guarding_xin_demo
 - `primary_evidence_found`
 - `candidate_only`
 
+## Sprint 5：规则执行增强与可计算语义收口
+
+- 事件阈值配置：`config/event_thresholds.yaml`
+- 阈值加载：`src/rule_engine/thresholds.py`
+- 说明文档：`docs/event-thresholds-spec.md`
+- 这些阈值当前为工程默认值，后续可依据回测与专家反馈调整。
+
+`match-rule` 输出增强字段（按规则项）：
+- `match_status`
+- `match_score`
+- `trigger_match_reason`
+- `missing_conditions`
+- `conflicting_conditions`
+- `thresholds_used`
+- `effect_domain`
+- `severity`
+- `time_window`
+- `evidence_summary`
+- `primary_evidence_found`
+- `candidate_only`
+
+冲突处理文档：`docs/rule-conflict-resolution.md`
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`
