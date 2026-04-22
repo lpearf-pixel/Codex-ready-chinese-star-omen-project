@@ -1,0 +1,16 @@
+[
+  {
+    "id": "rule_mars_guarding_xin_structured_only",
+    "source_text": "荧惑守心（结构化）",
+    "source_book": "开元占经",
+    "rule_priority": 20,
+    "trigger": {"body": "mars", "event_type": "guarding", "target": "xin_xiu", "qualifiers": []},
+    "effect_domain": ["general_omen"],
+    "severity": "medium",
+    "time_window": "0-15d",
+    "evidence": {
+      "card_type": "term_card",
+      "locator": "术语卡/荧惑守心"
+    }
+  }
+]

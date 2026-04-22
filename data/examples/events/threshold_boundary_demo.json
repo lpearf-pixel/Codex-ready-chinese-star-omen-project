@@ -1,0 +1,1 @@
+{"id":"event_threshold_boundary_demo","datetime_utc":"2026-03-11T12:00:00Z","body":"mars","event_type":"guarding","target_asterism":"xin_xiu","related_asterisms":["xin_xiu"],"angular_distance_deg":1.2,"duration_days":3,"visibility":{"is_visible":true},"epoch":"J2000","notes":"boundary case"}

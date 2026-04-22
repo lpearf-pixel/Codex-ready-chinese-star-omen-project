@@ -18,3 +18,17 @@ def test_match_rule_command_outputs_json():
     body = json.loads(result.stdout)
     assert "matched_rule_ids" in body
     assert "rule_mars_guarding_xin_001" in body["matched_rule_ids"]
+    for field in [
+        "match_status",
+        "match_score",
+        "trigger_match_reason",
+        "missing_conditions",
+        "conflicting_conditions",
+        "effect_domain",
+        "severity",
+        "time_window",
+        "evidence_summary",
+        "primary_evidence_found",
+        "candidate_only",
+    ]:
+        assert field in body
