@@ -1,0 +1,26 @@
+cases:
+  - query: "心宿"
+    query_mode: knowledge
+    expected_top1_path_contains: "心宿"
+    must_hit_primary: false
+    allowed_fallback_types: ["zhusu_card", "term_card", "extract_card"]
+  - query: "荧惑"
+    query_mode: knowledge
+    expected_top1_path_contains: "荧惑"
+    must_hit_primary: false
+    allowed_fallback_types: ["term_card", "extract_card"]
+  - query: "荧惑守心"
+    query_mode: evidence
+    expected_top1_path_contains: "分卷"
+    must_hit_primary: true
+    allowed_fallback_types: ["zhusu_card", "term_card", "extract_card"]
+  - query: "月犯心宿"
+    query_mode: evidence
+    expected_top1_path_contains: "分卷"
+    must_hit_primary: true
+    allowed_fallback_types: ["zhusu_card", "term_card", "extract_card"]
+  - query: "五星聚"
+    query_mode: evidence
+    expected_top1_path_contains: "分卷"
+    must_hit_primary: true
+    allowed_fallback_types: ["zhusu_card", "term_card", "extract_card"]

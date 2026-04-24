@@ -1,0 +1,11 @@
+{
+  "id": "event_mars_guarding_xin_demo",
+  "datetime_utc": "2026-03-11T12:00:00Z",
+  "body": "mars",
+  "event_type": "guarding",
+  "target_asterism": "xin_xiu",
+  "related_asterisms": ["xin_xiu"],
+  "epoch": "J2000",
+  "raw_calc_source": "demo_ephemeris_stub",
+  "notes": "demo input for minimal rule closure"
+}

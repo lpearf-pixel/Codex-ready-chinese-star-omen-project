@@ -1,0 +1,32 @@
+[
+  {
+    "query": "心宿",
+    "expected_query_mode": "knowledge",
+    "expected_literal_first": false,
+    "notes": "entity query should default to knowledge"
+  },
+  {
+    "query": "荧惑",
+    "expected_query_mode": "knowledge",
+    "expected_literal_first": false,
+    "notes": "single concept entity query"
+  },
+  {
+    "query": "荧惑守心",
+    "expected_query_mode": "evidence",
+    "expected_literal_first": true,
+    "notes": "evidence phrase query"
+  },
+  {
+    "query": "月犯心宿",
+    "expected_query_mode": "evidence",
+    "expected_literal_first": true,
+    "notes": "evidence phrase query"
+  },
+  {
+    "query": "五星聚",
+    "expected_query_mode": "evidence",
+    "expected_literal_first": true,
+    "notes": "evidence phrase query"
+  }
+]

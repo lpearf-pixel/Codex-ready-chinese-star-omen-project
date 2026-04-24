@@ -1,0 +1,15 @@
+cases:
+  - case_id: detect_mars_guarding_xin
+    datetime: "2026-08-18T12:00:00Z"
+    lon: 116.4
+    lat: 39.9
+    body: mars
+    target: xin_xiu
+    expected_min_events: 1
+  - case_id: detect_moon_invading_xin
+    datetime: "2026-08-18T12:00:00Z"
+    lon: 116.4
+    lat: 39.9
+    body: moon
+    target: xin_xiu
+    expected_min_events: 0

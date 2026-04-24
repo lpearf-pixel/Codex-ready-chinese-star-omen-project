@@ -1,0 +1,62 @@
+app:
+  env: ${APP_ENV:-development}
+  debug: ${APP_DEBUG:-false}
+  log_level: ${APP_LOG_LEVEL:-INFO}
+  timezone: ${APP_TIMEZONE:-Asia/Shanghai}
+  default_limit: ${APP_DEFAULT_LIMIT:-8}
+
+kb_search:
+  base_url: ${KB_SEARCH_BASE_URL:-}
+  api_port: ${KB_SEARCH_API_PORT:-8008}
+  api_key: ${KB_SEARCH_API_KEY:-}
+  default_collection: ${KB_SEARCH_DEFAULT_COLLECTION:-local_kb_default}
+  timeout_seconds: ${KB_SEARCH_TIMEOUT_SECONDS:-20}
+  query_normalize: ${KB_SEARCH_QUERY_NORMALIZE:-true}
+  query_s2t: ${KB_SEARCH_QUERY_S2T:-true}
+  query_t2s: ${KB_SEARCH_QUERY_T2S:-true}
+
+knowledge_base:
+  sources_root: ${KB_SOURCES_ROOT:-./data/sources}
+  enable_obsidian_source: ${KB_ENABLE_OBSIDIAN_SOURCE:-true}
+  obsidian_root: ${KB_OBSIDIAN_ROOT:-./data/obsidian}
+  obsidian_ingest_source_label: ${KB_OBSIDIAN_INGEST_SOURCE_LABEL:-obsidian}
+  obsidian_source_root_label: ${KB_OBSIDIAN_SOURCE_ROOT_LABEL:-kaiyuan_zhanjing}
+
+contract:
+  enforce_primary_required: ${CONTRACT_ENFORCE_PRIMARY_REQUIRED:-true}
+  primary_card_types: ${CONTRACT_PRIMARY_CARD_TYPES:-fenjuan,fulltext}
+  non_fact_card_types: ${CONTRACT_NON_FACT_CARD_TYPES:-prompt_asset,qa_example}
+
+evidence:
+  require_relative_path_for_citable: ${EVIDENCE_REQUIRE_RELATIVE_PATH_FOR_CITABLE:-true}
+  fallback_status_when_non_primary: ${EVIDENCE_FALLBACK_STATUS:-candidate_only}
+
+cli:
+  output_format_default: ${CLI_OUTPUT_FORMAT_DEFAULT:-json}
+  pretty_indent: ${CLI_PRETTY_INDENT:-2}
+
+astro:
+  default_epoch: ${ASTRO_DEFAULT_EPOCH:-J2000}
+  default_lon: ${ASTRO_DEFAULT_LON:-116.4}
+  default_lat: ${ASTRO_DEFAULT_LAT:-39.9}
+  default_location_name: ${ASTRO_DEFAULT_LOCATION_NAME:-Beijing}
+  visibility_min_alt_deg: ${ASTRO_VISIBILITY_MIN_ALT_DEG:-5}
+
+logging:
+  level: ${LOG_LEVEL:-INFO}
+  mask_secrets: ${LOG_MASK_SECRETS:-true}
+
+paths:
+  data_root: ${PATH_DATA_ROOT:-./data}
+  docs_root: ${PATH_DOCS_ROOT:-./docs}
+
+postgres:
+  host: ${POSTGRES_HOST:-127.0.0.1}
+  port: ${POSTGRES_PORT:-5432}
+  db: ${POSTGRES_DB:-astro}
+  user: ${POSTGRES_USER:-astro}
+  password: ${POSTGRES_PASSWORD:-}
+
+git_internal:
+  base_url: ${GIT_INTERNAL_BASE_URL:-}
+  token: ${GIT_INTERNAL_TOKEN:-}

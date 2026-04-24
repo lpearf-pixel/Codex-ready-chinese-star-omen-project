@@ -1,0 +1,19 @@
+[
+  {
+    "id": "xin_xiu",
+    "name_cn": "心宿",
+    "system_version": "tang",
+    "region": "er_shi_ba_xiu",
+    "modern_identifications": [
+      {
+        "star_name": "Antares",
+        "catalog": "HIP",
+        "catalog_id": 80763,
+        "confidence": 0.93
+      }
+    ],
+    "anchor_star": "心宿二",
+    "source_refs": ["开元占经", "中西对照恒星图表"],
+    "notes": "样例数据"
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "id": "event_moon_invading_xin_demo",
+  "datetime_utc": "2026-03-15T02:20:00Z",
+  "body": "moon",
+  "event_type": "invading",
+  "target_asterism": "xin_xiu",
+  "related_asterisms": ["xin_xiu"],
+  "epoch": "J2000",
+  "raw_calc_source": "demo_ephemeris_stub",
+  "notes": "demo input for minimal rule closure"
+}
