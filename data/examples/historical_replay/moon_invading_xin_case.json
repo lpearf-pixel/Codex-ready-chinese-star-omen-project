@@ -1,0 +1,10 @@
+{
+  "case_id": "hist_moon_invading_xin_001",
+  "input_datetime_utc": "2026-01-27T00:00:00Z",
+  "location": {"name": "Beijing", "lon": 116.4, "lat": 39.9},
+  "body": "moon",
+  "target": "xin_xiu",
+  "event_cluster_window_days": 2,
+  "peak_selection_rule": "earliest",
+  "force_fallback": true
+}

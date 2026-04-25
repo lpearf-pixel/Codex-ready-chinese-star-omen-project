@@ -1,0 +1,10 @@
+{
+  "case_id": "hist_mars_guarding_xin_001",
+  "input_datetime_utc": "2026-02-01T00:00:00Z",
+  "location": {"name": "Beijing", "lon": 116.4, "lat": 39.9},
+  "body": "mars",
+  "target": "xin_xiu",
+  "event_cluster_window_days": 3,
+  "peak_selection_rule": "min_angular_distance",
+  "force_fallback": true
+}

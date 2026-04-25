@@ -1,0 +1,44 @@
+cases:
+  - case_id: matcher_confidence_mars_xin
+    input_datetime_utc: "2026-08-18T12:00:00Z"
+    location: {name: "Beijing", lon: 116.4, lat: 39.9}
+    bodies: ["mars", "moon", "jupiter", "saturn"]
+    expected_event_type: "guarding"
+    expected_target: "xin_xiu"
+    expected_confidence_range: [0.0, 1.0]
+    expected_calc_quality: "low"
+    expected_visibility: false
+    expected_cluster_behavior: "single_cluster_or_none"
+
+  - case_id: threshold_boundary_guarding
+    input_datetime_utc: "2026-08-18T12:00:00Z"
+    location: {name: "Beijing", lon: 116.4, lat: 39.9}
+    bodies: ["mars"]
+    expected_event_type: "guarding"
+    expected_target: "xin_xiu"
+    expected_confidence_range: [0.8, 1.0]
+    expected_calc_quality: "low"
+    expected_visibility: false
+    expected_cluster_behavior: "no_new_cluster_when_not_visible"
+
+  - case_id: skyfield_vs_fallback_contract
+    input_datetime_utc: "2026-08-18T12:00:00Z"
+    location: {name: "Beijing", lon: 116.4, lat: 39.9}
+    bodies: ["moon", "mars"]
+    expected_event_type: "invading"
+    expected_target: "xin_xiu"
+    expected_confidence_range: [0.0, 1.0]
+    expected_calc_quality: "high_or_low"
+    expected_visibility: true
+    expected_cluster_behavior: "comparable_fields_present"
+
+  - case_id: visibility_toggle_effect
+    input_datetime_utc: "2026-08-18T12:00:00Z"
+    location: {name: "Beijing", lon: 116.4, lat: 39.9}
+    bodies: ["moon", "mars", "jupiter", "saturn"]
+    expected_event_type: "gathering"
+    expected_target: "multi_planet"
+    expected_confidence_range: [0.0, 1.0]
+    expected_calc_quality: "mixed"
+    expected_visibility: true
+    expected_cluster_behavior: "cluster_count_reduced_after_dedup"

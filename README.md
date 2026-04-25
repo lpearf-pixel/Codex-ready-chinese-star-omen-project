@@ -391,6 +391,56 @@ python -m src.cli detect-and-match \
 - `docs/asterism-matching-spec.md`
 - `eval/detect_match_eval_cases.yaml`
 
+## Sprint 7 后半段：事件聚类、历史重演、校准评测（最小实现）
+
+本阶段一句话目标：从“可解释来源”推进到“可聚类、可重演、可校准”。  
+**不**包含全量自动扫描、全量历史回测扩容、自动报告系统。
+
+### 1) 事件聚类（去重）
+
+- 实现：`src/astronomy/event_cluster.py`
+- 规则（最小版）：
+  - 同一 `body + event_type + target_asterism`
+  - 在时间窗口（默认 3 天，可用 `--cluster-window-days` 调整）内
+  - 聚为同一个 cluster
+- 输出字段：`event_cluster_id`, `window_start`, `window_end`, `peak_time`, `representative_event`, `member_event_ids`, `cluster_reason`
+
+### 2) 小规模历史重演
+
+- 样例目录：`data/examples/historical_replay/`
+- CLI：
+
+```bash
+python -m src.cli replay-event --case data/examples/historical_replay/mars_guarding_xin_case.json
+```
+
+- 输出包含：
+  - `input_case_id`, `input_datetime_utc`, `location`
+  - `calc_source`, `calc_quality`
+  - `generated_events`, `clustered_events`
+  - `matched_rule_ids`, `match_status`, `match_score`
+  - `evidence_summary`, `primary_evidence_found`, `candidate_only`
+
+### 3) detector / matcher 校准资产
+
+- `eval/detector_calibration_eval_cases.yaml`
+- `docs/detector-calibration-spec.md`
+
+覆盖：confidence 区间、阈值边界、`skyfield/fallback_approx` 差异、visibility 影响、cluster 前后事件量变化。
+
+### 4) detect-and-match 输出增强
+
+`detect-and-match` 与 `replay-event` 输出面向校准/重演分析，新增（按事件）：
+- `calc_source`
+- `calc_quality`
+- `ephemeris_provider`
+- `is_visible`
+- `visibility_reason`
+- `asterism_match_confidence`
+- `event_cluster_id`（聚类后事件）
+- `matched_rule_ids` / `match_status` / `match_score`
+- `primary_evidence_found` / `candidate_only`
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`

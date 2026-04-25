@@ -89,6 +89,8 @@ class Settings:
     astro_default_lat: float
     astro_default_location_name: str
     astro_visibility_min_alt_deg: float
+    astro_event_cluster_window_days: int
+    astro_peak_selection_rule: str
 
     config_path: str
     raw_config: dict[str, Any]
@@ -190,6 +192,13 @@ def load_settings(config_path: Path | None = None) -> Settings:
         astro_visibility_min_alt_deg=_as_float(
             "ASTRO_VISIBILITY_MIN_ALT_DEG",
             _env_or("ASTRO_VISIBILITY_MIN_ALT_DEG", astro.get("visibility_min_alt_deg")),
+        ),
+        astro_event_cluster_window_days=_as_int(
+            "ASTRO_EVENT_CLUSTER_WINDOW_DAYS",
+            _env_or("ASTRO_EVENT_CLUSTER_WINDOW_DAYS", astro.get("event_cluster_window_days", 3)),
+        ),
+        astro_peak_selection_rule=str(
+            _env_or("ASTRO_PEAK_SELECTION_RULE", astro.get("peak_selection_rule", "min_angular_distance"))
         ),
         config_path=str(config_path or Path(os.getenv("APP_CONFIG_PATH", str(DEFAULT_CONFIG_PATH)))),
         raw_config=cfg,

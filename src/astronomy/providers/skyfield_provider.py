@@ -31,7 +31,7 @@ class SkyfieldEphemerisProvider:
         ra = (lon * 0.9) % 360
         dec = lat * 1.2
         motion = body_phase * 0.8
-        altitude = max(-30.0, min(80.0, dec - 10.0))
+        altitude = max(-30.0, min(80.0, dec + 2.0))
         azimuth = (lon + 180.0) % 360
         is_visible = altitude > 0
         return {

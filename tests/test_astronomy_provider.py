@@ -28,3 +28,11 @@ def test_provider_returns_visibility_and_quality_fields_in_fallback_mode():
         assert field in row
     assert row["calc_source"] == "fallback_approx"
     assert row["calc_quality"] == "low"
+
+
+def test_provider_calc_quality_contract_for_auto_mode():
+    p = SkyfieldEphemerisProvider(ephemeris_path=None, force_fallback=False)
+    points = p.get_points(bodies=["moon"], datetime_utc="2026-08-18T12:00:00Z", lon=116.4, lat=39.9)
+    row = points[0]
+    assert row["calc_source"] in {"fallback_approx", "skyfield"}
+    assert row["calc_quality"] in {"low", "high"}

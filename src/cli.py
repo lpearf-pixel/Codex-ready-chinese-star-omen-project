@@ -23,15 +23,133 @@ from src.connectors.evidence_resolver import resolve_evidence
 from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_CARD_TYPES, is_citable_evidence
 from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
-from src.eval.corpus_eval import run_corpus_eval
-from src.astronomy import MinimalAsterismMatcher, MinimalCelestialEventDetector, SkyfieldEphemerisProvider
-from src.rule_engine.minimal_matcher import run_match_rule
+from src.eval.corpus_eval import load_eval_cases, run_corpus_eval
+from src.astronomy import MinimalAsterismMatcher, MinimalCelestialEventDetector, SkyfieldEphemerisProvider, cluster_events
+from src.rule_engine.minimal_matcher import load_json, match_event_to_rules, run_match_rule
 
 app = typer.Typer(help="Chinese astro model CLI") if typer else None
 
 
 def _load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _enrich_events_with_match_context(
+    events: list[dict[str, Any]],
+    *,
+    points: list[dict[str, Any]],
+    matches: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    point_map = {str(p.get("body")): p for p in points if p.get("body")}
+    enriched: list[dict[str, Any]] = []
+    for event in events:
+        body = str(event.get("body") or "")
+        target = str(event.get("target_asterism") or "")
+        point = point_map.get(body, {})
+        event_match = next((m for m in matches if m.get("body") == body and m.get("matched_asterism_id") == target), {})
+        enriched.append(
+            {
+                **event,
+                "calc_source": event.get("calc_source") or point.get("calc_source"),
+                "calc_quality": event.get("calc_quality") or point.get("calc_quality"),
+                "ephemeris_provider": event.get("ephemeris_provider") or point.get("ephemeris_provider"),
+                "is_visible": ((event.get("visibility") or {}).get("is_visible") if isinstance(event.get("visibility"), dict) else None),
+                "visibility_reason": ((event.get("visibility") or {}).get("visibility_reason") if isinstance(event.get("visibility"), dict) else None),
+                "asterism_match_confidence": event_match.get("confidence"),
+            }
+        )
+    return enriched
+
+
+def run_detect_and_match_pipeline(
+    *,
+    datetime_utc: str,
+    lon: float,
+    lat: float,
+    body: str,
+    target: str,
+    rules_path: Path,
+    kb_root: Path | None,
+    ephemeris_path: str | None,
+    force_fallback: bool = False,
+    cluster_window_days: int = 3,
+    peak_selection_rule: str = "min_angular_distance",
+) -> dict[str, Any]:
+    provider = SkyfieldEphemerisProvider(ephemeris_path=ephemeris_path, force_fallback=force_fallback)
+    matcher = MinimalAsterismMatcher()
+    detector = MinimalCelestialEventDetector()
+    points = provider.get_points(bodies=["moon", "mars", "jupiter", "saturn"], datetime_utc=datetime_utc, lon=lon, lat=lat)
+    matches = matcher.match(points=points, targets=[target, "xin_xiu", "jiao_xiu", "fang_xiu"])
+    events = detector.detect(datetime_utc=datetime_utc, lon=lon, lat=lat, body=body, target=target, points=points, matches=matches)
+    enriched_events = _enrich_events_with_match_context(events, points=points, matches=matches)
+    clustering = cluster_events(enriched_events, window_days=cluster_window_days, peak_selection_rule=peak_selection_rule)
+    rules = load_json(rules_path)
+    rule_matches = [match_event_to_rules(event=ev, rules=rules, kb_root=kb_root) for ev in clustering["events"]]
+    first_event = clustering["events"][0] if clustering["events"] else {}
+    first_match = rule_matches[0] if rule_matches else {}
+    return {
+        "input": {"datetime": datetime_utc, "lon": lon, "lat": lat, "body": body, "target": target},
+        "points": points,
+        "asterism_matches": matches,
+        "detected_events": enriched_events,
+        "clustered_events": clustering["events"],
+        "event_clusters": clustering["clusters"],
+        "rule_matches": rule_matches,
+        "calc_source": first_event.get("calc_source"),
+        "calc_quality": first_event.get("calc_quality"),
+        "ephemeris_provider": first_event.get("ephemeris_provider"),
+        "is_visible": first_event.get("is_visible"),
+        "visibility_reason": first_event.get("visibility_reason"),
+        "asterism_match_confidence": first_event.get("asterism_match_confidence"),
+        "event_cluster_id": first_event.get("event_cluster_id"),
+        "matched_rule_ids": first_match.get("matched_rule_ids", []),
+        "match_status": first_match.get("match_status", "not_matched"),
+        "match_score": first_match.get("match_score", 0.0),
+        "primary_evidence_found": first_match.get("primary_evidence_found", False),
+        "candidate_only": first_match.get("candidate_only", True),
+    }
+
+
+def replay_event_impl(
+    *,
+    case_path: Path,
+    rules_path: Path = Path("data/processed/corpus/sample_rules.json"),
+    kb_root: Path | None = None,
+    ephemeris_path: str | None = None,
+) -> dict[str, Any]:
+    case = _load_json(case_path)
+    output = run_detect_and_match_pipeline(
+        datetime_utc=str(case["input_datetime_utc"]),
+        lon=float(case["location"]["lon"]),
+        lat=float(case["location"]["lat"]),
+        body=str(case.get("body") or "mars"),
+        target=str(case.get("target") or "xin_xiu"),
+        rules_path=rules_path,
+        kb_root=kb_root,
+        ephemeris_path=ephemeris_path,
+        force_fallback=bool(case.get("force_fallback", False)),
+        cluster_window_days=int(case.get("event_cluster_window_days", 3)),
+        peak_selection_rule=str(case.get("peak_selection_rule", "min_angular_distance")),
+    )
+    first_point = next((p for p in output["points"] if p.get("body") == case.get("body")), output["points"][0] if output["points"] else {})
+    first_match = output["rule_matches"][0] if output["rule_matches"] else {}
+    return {
+        "input_case_id": case.get("case_id"),
+        "input_datetime_utc": case.get("input_datetime_utc"),
+        "location": case.get("location"),
+        "calc_source": first_point.get("calc_source"),
+        "calc_quality": first_point.get("calc_quality"),
+        "generated_events": output["detected_events"],
+        "clustered_events": output["clustered_events"],
+        "matched_rule_ids": first_match.get("matched_rule_ids", []),
+        "match_status": first_match.get("match_status", "not_matched"),
+        "match_score": first_match.get("match_score", 0.0),
+        "evidence_summary": first_match.get("evidence_summary", {}),
+        "primary_evidence_found": first_match.get("primary_evidence_found", False),
+        "candidate_only": first_match.get("candidate_only", True),
+        "event_clusters": output["event_clusters"],
+        "rule_matches": output["rule_matches"],
+    }
 
 
 def validate_data_impl(
@@ -355,26 +473,34 @@ if typer:
         rules_path: Path = typer.Option(Path("data/processed/corpus/sample_rules.json"), "--rules-path"),
         kb_root: Path | None = typer.Option(None, "--kb-root"),
         ephemeris_path: str | None = typer.Option(None, "--ephemeris-path"),
+        force_fallback: bool = typer.Option(False, "--force-fallback"),
+        cluster_window_days: int = typer.Option(3, "--cluster-window-days"),
+        peak_selection_rule: str = typer.Option("min_angular_distance", "--peak-selection-rule"),
     ):
-        provider = SkyfieldEphemerisProvider(ephemeris_path=ephemeris_path)
-        matcher = MinimalAsterismMatcher()
-        detector = MinimalCelestialEventDetector()
-        points = provider.get_points(bodies=["moon", "mars", "jupiter", "saturn"], datetime_utc=datetime, lon=lon, lat=lat)
-        matches = matcher.match(points=points, targets=[target, "xin_xiu", "jiao_xiu", "fang_xiu"])
-        events = detector.detect(datetime_utc=datetime, lon=lon, lat=lat, body=body, target=target, points=points, matches=matches)
-        rule_matches = []
-        for ev in events:
-            from src.rule_engine.minimal_matcher import match_event_to_rules, load_json
+        out = run_detect_and_match_pipeline(
+            datetime_utc=datetime,
+            lon=lon,
+            lat=lat,
+            body=body,
+            target=target,
+            rules_path=rules_path,
+            kb_root=kb_root,
+            ephemeris_path=ephemeris_path,
+            force_fallback=force_fallback,
+            cluster_window_days=cluster_window_days,
+            peak_selection_rule=peak_selection_rule,
+        )
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
-            rules = load_json(rules_path)
-            rule_matches.append(match_event_to_rules(event=ev, rules=rules, kb_root=kb_root))
-        out = {
-            "input": {"datetime": datetime, "lon": lon, "lat": lat, "body": body, "target": target},
-            "points": points,
-            "asterism_matches": matches,
-            "detected_events": events,
-            "rule_matches": rule_matches,
-        }
+
+    @app.command("replay-event")
+    def replay_event(
+        case: Path = typer.Option(..., "--case"),
+        rules_path: Path = typer.Option(Path("data/processed/corpus/sample_rules.json"), "--rules-path"),
+        kb_root: Path | None = typer.Option(None, "--kb-root"),
+        ephemeris_path: str | None = typer.Option(None, "--ephemeris-path"),
+    ):
+        out = replay_event_impl(case_path=case, rules_path=rules_path, kb_root=kb_root, ephemeris_path=ephemeris_path)
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
@@ -422,6 +548,14 @@ def _main_fallback():  # pragma: no cover
     p_detect.add_argument("--rules-path", default="data/processed/corpus/sample_rules.json")
     p_detect.add_argument("--kb-root")
     p_detect.add_argument("--ephemeris-path")
+    p_detect.add_argument("--force-fallback", action="store_true")
+    p_detect.add_argument("--cluster-window-days", type=int, default=3)
+    p_detect.add_argument("--peak-selection-rule", default="min_angular_distance")
+    p_replay = sub.add_parser("replay-event")
+    p_replay.add_argument("--case", required=True)
+    p_replay.add_argument("--rules-path", default="data/processed/corpus/sample_rules.json")
+    p_replay.add_argument("--kb-root")
+    p_replay.add_argument("--ephemeris-path")
 
     args = parser.parse_args()
     if args.cmd == "validate-data":
@@ -458,28 +592,29 @@ def _main_fallback():  # pragma: no cover
         out = run_match_rule(event_path=Path(args.event), rules_path=Path(args.rules_path), kb_root=Path(args.kb_root) if args.kb_root else None)
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "detect-and-match":
-        provider = SkyfieldEphemerisProvider(ephemeris_path=args.ephemeris_path)
-        matcher = MinimalAsterismMatcher()
-        detector = MinimalCelestialEventDetector()
-        points = provider.get_points(bodies=["moon", "mars", "jupiter", "saturn"], datetime_utc=args.datetime, lon=args.lon, lat=args.lat)
-        matches = matcher.match(points=points, targets=[args.target, "xin_xiu", "jiao_xiu", "fang_xiu"])
-        events = detector.detect(datetime_utc=args.datetime, lon=args.lon, lat=args.lat, body=args.body, target=args.target, points=points, matches=matches)
-        from src.rule_engine.minimal_matcher import match_event_to_rules, load_json
-
-        rules = load_json(Path(args.rules_path))
-        rule_matches = [match_event_to_rules(event=ev, rules=rules, kb_root=Path(args.kb_root) if args.kb_root else None) for ev in events]
+        out = run_detect_and_match_pipeline(
+            datetime_utc=args.datetime,
+            lon=args.lon,
+            lat=args.lat,
+            body=args.body,
+            target=args.target,
+            rules_path=Path(args.rules_path),
+            kb_root=Path(args.kb_root) if args.kb_root else None,
+            ephemeris_path=args.ephemeris_path,
+            force_fallback=args.force_fallback,
+            cluster_window_days=args.cluster_window_days,
+            peak_selection_rule=args.peak_selection_rule,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "replay-event":
+        out = replay_event_impl(
+            case_path=Path(args.case),
+            rules_path=Path(args.rules_path),
+            kb_root=Path(args.kb_root) if args.kb_root else None,
+            ephemeris_path=args.ephemeris_path,
+        )
         print(
-            json.dumps(
-                {
-                    "input": {"datetime": args.datetime, "lon": args.lon, "lat": args.lat, "body": args.body, "target": args.target},
-                    "points": points,
-                    "asterism_matches": matches,
-                    "detected_events": events,
-                    "rule_matches": rule_matches,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+            json.dumps(out, ensure_ascii=False, indent=2)
         )
 
 
