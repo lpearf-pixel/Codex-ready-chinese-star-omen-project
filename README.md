@@ -441,6 +441,48 @@ python -m src.cli replay-event --case data/examples/historical_replay/mars_guard
 - `matched_rule_ids` / `match_status` / `match_score`
 - `primary_evidence_found` / `candidate_only`
 
+## Sprint 8：时间窗口扫描与最小基准评估
+
+目标：把“单点检测”推进到“给定时间窗口可自动扫描候选事件并输出最小指标”。
+
+### scan-window 示例
+
+```bash
+python -m src.cli scan-window \
+  --start 2026-01-31T00:00:00Z \
+  --end 2026-02-02T00:00:00Z \
+  --lon 116.4 \
+  --lat 39.9 \
+  --bodies mars --bodies moon --bodies jupiter --bodies saturn \
+  --targets xin_xiu --targets jiao_xiu --targets fang_xiu \
+  --event-types guarding --event-types invading --event-types conjunction --event-types gathering \
+  --force-fallback
+```
+
+### scan-window 输出字段（最小）
+
+- `scan_params`
+- `raw_event_count`, `clustered_event_count`
+- `representative_events`
+- `matched_rule_ids`
+- `calc_source`, `calc_quality`, `is_visible`
+- `match_status`, `match_score`, `primary_evidence_found`
+- `metrics`:
+  - `detected_event_count`
+  - `clustered_event_count`
+  - `matched_rule_count`
+  - `primary_evidence_hit_rate`
+  - `candidate_only_rate`
+  - `visibility_filtered_count`
+  - `fallback_approx_rate`
+
+### 当前范围与限制
+
+- 支持 body：`mars/moon/jupiter/saturn`
+- 支持 target：`xin_xiu/jiao_xiu/fang_xiu`
+- 支持 event_type：`guarding/invading/conjunction/gathering`
+- 当前为最小扫描层，不是全量长期扫描器，也不是完整历史回测扩容版。
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`

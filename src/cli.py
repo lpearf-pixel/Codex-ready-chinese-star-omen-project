@@ -24,7 +24,7 @@ from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_
 from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
 from src.eval.corpus_eval import load_eval_cases, run_corpus_eval
-from src.astronomy import MinimalAsterismMatcher, MinimalCelestialEventDetector, SkyfieldEphemerisProvider, cluster_events
+from src.astronomy import MinimalAsterismMatcher, MinimalCelestialEventDetector, MinimalWindowScanner, SkyfieldEphemerisProvider, cluster_events
 from src.rule_engine.minimal_matcher import load_json, match_event_to_rules, run_match_rule
 
 app = typer.Typer(help="Chinese astro model CLI") if typer else None
@@ -150,6 +150,43 @@ def replay_event_impl(
         "event_clusters": output["event_clusters"],
         "rule_matches": output["rule_matches"],
     }
+
+
+def scan_window_impl(
+    *,
+    start_datetime_utc: str,
+    end_datetime_utc: str,
+    lon: float,
+    lat: float,
+    bodies: list[str],
+    targets: list[str],
+    event_types: list[str],
+    rules_path: Path = Path("data/processed/corpus/sample_rules.json"),
+    kb_root: Path | None = None,
+    ephemeris_path: str | None = None,
+    force_fallback: bool = False,
+    cluster_window_days: int = 3,
+    peak_selection_rule: str = "min_angular_distance",
+    step_hours: int = 24,
+) -> dict[str, Any]:
+    scanner = MinimalWindowScanner(
+        ephemeris_path=ephemeris_path,
+        force_fallback=force_fallback,
+        cluster_window_days=cluster_window_days,
+        peak_selection_rule=peak_selection_rule,
+    )
+    return scanner.scan(
+        start_datetime_utc=start_datetime_utc,
+        end_datetime_utc=end_datetime_utc,
+        lon=lon,
+        lat=lat,
+        bodies=bodies,
+        targets=targets,
+        event_types=event_types,
+        rules_path=rules_path,
+        kb_root=kb_root,
+        step_hours=step_hours,
+    )
 
 
 def validate_data_impl(
@@ -504,6 +541,42 @@ if typer:
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
+    @app.command("scan-window")
+    def scan_window(
+        start: str = typer.Option(..., "--start"),
+        end: str = typer.Option(..., "--end"),
+        lon: float = typer.Option(..., "--lon"),
+        lat: float = typer.Option(..., "--lat"),
+        bodies: list[str] = typer.Option(["mars", "moon", "jupiter", "saturn"], "--bodies"),
+        targets: list[str] = typer.Option(["xin_xiu", "jiao_xiu", "fang_xiu"], "--targets"),
+        event_types: list[str] = typer.Option(["guarding", "invading", "conjunction", "gathering"], "--event-types"),
+        rules_path: Path = typer.Option(Path("data/processed/corpus/sample_rules.json"), "--rules-path"),
+        kb_root: Path | None = typer.Option(None, "--kb-root"),
+        ephemeris_path: str | None = typer.Option(None, "--ephemeris-path"),
+        force_fallback: bool = typer.Option(False, "--force-fallback"),
+        cluster_window_days: int = typer.Option(3, "--cluster-window-days"),
+        peak_selection_rule: str = typer.Option("min_angular_distance", "--peak-selection-rule"),
+        step_hours: int = typer.Option(24, "--step-hours"),
+    ):
+        out = scan_window_impl(
+            start_datetime_utc=start,
+            end_datetime_utc=end,
+            lon=lon,
+            lat=lat,
+            bodies=bodies,
+            targets=targets,
+            event_types=event_types,
+            rules_path=rules_path,
+            kb_root=kb_root,
+            ephemeris_path=ephemeris_path,
+            force_fallback=force_fallback,
+            cluster_window_days=cluster_window_days,
+            peak_selection_rule=peak_selection_rule,
+            step_hours=step_hours,
+        )
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
 
 def _main_fallback():  # pragma: no cover
     parser = argparse.ArgumentParser(description="Chinese astro model CLI")
@@ -556,6 +629,21 @@ def _main_fallback():  # pragma: no cover
     p_replay.add_argument("--rules-path", default="data/processed/corpus/sample_rules.json")
     p_replay.add_argument("--kb-root")
     p_replay.add_argument("--ephemeris-path")
+    p_scan = sub.add_parser("scan-window")
+    p_scan.add_argument("--start", required=True)
+    p_scan.add_argument("--end", required=True)
+    p_scan.add_argument("--lon", type=float, required=True)
+    p_scan.add_argument("--lat", type=float, required=True)
+    p_scan.add_argument("--bodies", action="append", default=[])
+    p_scan.add_argument("--targets", action="append", default=[])
+    p_scan.add_argument("--event-types", action="append", default=[])
+    p_scan.add_argument("--rules-path", default="data/processed/corpus/sample_rules.json")
+    p_scan.add_argument("--kb-root")
+    p_scan.add_argument("--ephemeris-path")
+    p_scan.add_argument("--force-fallback", action="store_true")
+    p_scan.add_argument("--cluster-window-days", type=int, default=3)
+    p_scan.add_argument("--peak-selection-rule", default="min_angular_distance")
+    p_scan.add_argument("--step-hours", type=int, default=24)
 
     args = parser.parse_args()
     if args.cmd == "validate-data":
@@ -616,6 +704,24 @@ def _main_fallback():  # pragma: no cover
         print(
             json.dumps(out, ensure_ascii=False, indent=2)
         )
+    elif args.cmd == "scan-window":
+        out = scan_window_impl(
+            start_datetime_utc=args.start,
+            end_datetime_utc=args.end,
+            lon=args.lon,
+            lat=args.lat,
+            bodies=args.bodies or ["mars", "moon", "jupiter", "saturn"],
+            targets=args.targets or ["xin_xiu", "jiao_xiu", "fang_xiu"],
+            event_types=args.event_types or ["guarding", "invading", "conjunction", "gathering"],
+            rules_path=Path(args.rules_path),
+            kb_root=Path(args.kb_root) if args.kb_root else None,
+            ephemeris_path=args.ephemeris_path,
+            force_fallback=args.force_fallback,
+            cluster_window_days=args.cluster_window_days,
+            peak_selection_rule=args.peak_selection_rule,
+            step_hours=args.step_hours,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

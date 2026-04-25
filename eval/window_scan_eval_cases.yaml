@@ -1,0 +1,33 @@
+cases:
+  - case_id: positive_window_mars_guarding
+    start_datetime_utc: "2026-01-31T00:00:00Z"
+    end_datetime_utc: "2026-02-02T00:00:00Z"
+    location: {name: "Beijing", lon: 116.4, lat: 39.9}
+    bodies: ["mars", "moon", "jupiter", "saturn"]
+    targets: ["xin_xiu", "jiao_xiu", "fang_xiu"]
+    expected_event_types: ["guarding"]
+    expected_cluster_count_range: [1, 3]
+    expected_rule_ids: ["rule_mars_guarding_xin_001"]
+    expected_primary_hit: true
+
+  - case_id: negative_window_no_focus_event
+    start_datetime_utc: "2026-03-10T00:00:00Z"
+    end_datetime_utc: "2026-03-11T00:00:00Z"
+    location: {name: "Beijing", lon: 116.4, lat: 39.9}
+    bodies: ["mars", "moon", "jupiter", "saturn"]
+    targets: ["xin_xiu", "jiao_xiu", "fang_xiu"]
+    expected_event_types: []
+    expected_cluster_count_range: [0, 2]
+    expected_rule_ids: []
+    expected_primary_hit: false
+
+  - case_id: boundary_window_short_scan
+    start_datetime_utc: "2026-02-16T00:00:00Z"
+    end_datetime_utc: "2026-02-16T00:00:00Z"
+    location: {name: "Beijing", lon: 116.4, lat: 39.9}
+    bodies: ["jupiter", "saturn"]
+    targets: ["xin_xiu"]
+    expected_event_types: ["conjunction"]
+    expected_cluster_count_range: [1, 1]
+    expected_rule_ids: ["rule_jupiter_saturn_conjunction_001"]
+    expected_primary_hit: false
