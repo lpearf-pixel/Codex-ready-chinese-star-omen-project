@@ -28,7 +28,7 @@ class KBSearchRetriever:
     PRIMARY_ONLY_PHRASES = {"荧惑守心", "熒惑守心", "月犯心宿", "五星聚", "土木合"}
     PRIMARY_CARD_TYPES = {"fenjuan", "fulltext"}
     STRUCTURED_CARD_TYPES = {"term_card", "zhusu_card", "extract_card"}
-    INVALID_API_KEY_PLACEHOLDERS = {"dev_change_me", "change_me", "please_change_me", "replace_me"}
+    INVALID_API_KEY_PLACEHOLDERS = {"change_me", "please_change_me", "replace_me", "your_api_key_here"}
     RETRIEVAL_POOL_SPEC: dict[str, dict[str, list[str]]] = {
         "knowledge": {
             "stage1": ["xingguan_card", "zhusu_card", "term_card", "extract_card", "topic_index", "chapter_summary"],
