@@ -24,7 +24,16 @@ from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_
 from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
 from src.eval.corpus_eval import load_eval_cases, run_corpus_eval
+from src.eval.historical_benchmark import export_benchmark_markdown, load_benchmark_case, run_benchmark_case
 from src.astronomy import MinimalAsterismMatcher, MinimalCelestialEventDetector, MinimalWindowScanner, SkyfieldEphemerisProvider, cluster_events
+from src.review.review_queue import (
+    DEFAULT_QUEUE_PATH,
+    DEFAULT_REVIEWED_PATH,
+    build_review_queue_from_benchmark,
+    export_review_markdown,
+    load_jsonl,
+    update_review_item,
+)
 from src.rule_engine.minimal_matcher import load_json, match_event_to_rules, run_match_rule
 
 app = typer.Typer(help="Chinese astro model CLI") if typer else None
@@ -187,6 +196,74 @@ def scan_window_impl(
         kb_root=kb_root,
         step_hours=step_hours,
     )
+
+
+def benchmark_window_impl(
+    *,
+    case_path: Path,
+    rules_path: Path = Path("data/processed/corpus/sample_rules.json"),
+    ephemeris_path: str | None = None,
+    force_fallback: bool = False,
+) -> dict[str, Any]:
+    case = load_benchmark_case(case_path)
+    return run_benchmark_case(
+        case=case,
+        rules_path=rules_path,
+        ephemeris_path=ephemeris_path,
+        force_fallback=force_fallback,
+    )
+
+
+def build_review_queue_impl(
+    *,
+    benchmark_path: Path,
+    queue_path: Path = DEFAULT_QUEUE_PATH,
+) -> dict[str, Any]:
+    payload = _load_json(benchmark_path)
+    return build_review_queue_from_benchmark(payload, queue_path=queue_path)
+
+
+def review_item_impl(
+    *,
+    review_item_id: str,
+    status: str,
+    notes: str,
+    queue_path: Path = DEFAULT_QUEUE_PATH,
+    reviewed_path: Path = DEFAULT_REVIEWED_PATH,
+) -> dict[str, Any]:
+    return update_review_item(
+        review_item_id=review_item_id,
+        status=status,
+        notes=notes,
+        queue_path=queue_path,
+        reviewed_path=reviewed_path,
+    )
+
+
+def export_review_impl(
+    *,
+    benchmark_path: Path | None,
+    queue_path: Path = DEFAULT_QUEUE_PATH,
+    out_path: Path | None = None,
+    format: str = "md",
+) -> dict[str, Any]:
+    if format != "md":
+        raise ValueError("only md export is supported in Sprint 9 minimal implementation")
+    queue_rows = load_jsonl(queue_path)
+    benchmark_payloads: list[dict[str, Any]] = []
+    if benchmark_path and benchmark_path.exists():
+        benchmark_payloads = [_load_json(benchmark_path)]
+    text = export_review_markdown(queue_rows=queue_rows, benchmark_payloads=benchmark_payloads)
+    if out_path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(text, encoding="utf-8")
+    return {
+        "ok": True,
+        "format": "md",
+        "queue_item_count": len(queue_rows),
+        "out_path": str(out_path) if out_path else None,
+        "content": text if not out_path else None,
+    }
 
 
 def validate_data_impl(
@@ -577,6 +654,58 @@ if typer:
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
+    @app.command("benchmark-window")
+    def benchmark_window(
+        case: Path = typer.Option(..., "--case"),
+        rules_path: Path = typer.Option(Path("data/processed/corpus/sample_rules.json"), "--rules-path"),
+        ephemeris_path: str | None = typer.Option(None, "--ephemeris-path"),
+        force_fallback: bool = typer.Option(False, "--force-fallback"),
+        export_md: Path | None = typer.Option(None, "--export-md"),
+    ):
+        out = benchmark_window_impl(
+            case_path=case,
+            rules_path=rules_path,
+            ephemeris_path=ephemeris_path,
+            force_fallback=force_fallback,
+        )
+        if export_md:
+            export_md.parent.mkdir(parents=True, exist_ok=True)
+            export_md.write_text(export_benchmark_markdown(out), encoding="utf-8")
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+    @app.command("build-review-queue")
+    def build_review_queue_cmd(
+        from_benchmark: Path = typer.Option(..., "--from-benchmark"),
+        queue_path: Path = typer.Option(DEFAULT_QUEUE_PATH, "--queue-path"),
+    ):
+        out = build_review_queue_impl(benchmark_path=from_benchmark, queue_path=queue_path)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+    @app.command("review-item")
+    def review_item_cmd(
+        id: str = typer.Option(..., "--id"),
+        status: str = typer.Option(..., "--status"),
+        notes: str = typer.Option("", "--notes"),
+        queue_path: Path = typer.Option(DEFAULT_QUEUE_PATH, "--queue-path"),
+        reviewed_path: Path = typer.Option(DEFAULT_REVIEWED_PATH, "--reviewed-path"),
+    ):
+        out = review_item_impl(review_item_id=id, status=status, notes=notes, queue_path=queue_path, reviewed_path=reviewed_path)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+    @app.command("export-review")
+    def export_review_cmd(
+        format: str = typer.Option("md", "--format"),
+        benchmark: Path | None = typer.Option(None, "--benchmark"),
+        queue_path: Path = typer.Option(DEFAULT_QUEUE_PATH, "--queue-path"),
+        out: Path | None = typer.Option(None, "--out"),
+    ):
+        payload = export_review_impl(benchmark_path=benchmark, queue_path=queue_path, out_path=out, format=format)
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
 
 def _main_fallback():  # pragma: no cover
     parser = argparse.ArgumentParser(description="Chinese astro model CLI")
@@ -644,6 +773,26 @@ def _main_fallback():  # pragma: no cover
     p_scan.add_argument("--cluster-window-days", type=int, default=3)
     p_scan.add_argument("--peak-selection-rule", default="min_angular_distance")
     p_scan.add_argument("--step-hours", type=int, default=24)
+    p_benchmark = sub.add_parser("benchmark-window")
+    p_benchmark.add_argument("--case", required=True)
+    p_benchmark.add_argument("--rules-path", default="data/processed/corpus/sample_rules.json")
+    p_benchmark.add_argument("--ephemeris-path")
+    p_benchmark.add_argument("--force-fallback", action="store_true")
+    p_benchmark.add_argument("--export-md")
+    p_build_review = sub.add_parser("build-review-queue")
+    p_build_review.add_argument("--from-benchmark", required=True)
+    p_build_review.add_argument("--queue-path", default=str(DEFAULT_QUEUE_PATH))
+    p_review_item = sub.add_parser("review-item")
+    p_review_item.add_argument("--id", required=True)
+    p_review_item.add_argument("--status", required=True)
+    p_review_item.add_argument("--notes", default="")
+    p_review_item.add_argument("--queue-path", default=str(DEFAULT_QUEUE_PATH))
+    p_review_item.add_argument("--reviewed-path", default=str(DEFAULT_REVIEWED_PATH))
+    p_export_review = sub.add_parser("export-review")
+    p_export_review.add_argument("--format", default="md")
+    p_export_review.add_argument("--benchmark")
+    p_export_review.add_argument("--queue-path", default=str(DEFAULT_QUEUE_PATH))
+    p_export_review.add_argument("--out")
 
     args = parser.parse_args()
     if args.cmd == "validate-data":
@@ -720,6 +869,38 @@ def _main_fallback():  # pragma: no cover
             cluster_window_days=args.cluster_window_days,
             peak_selection_rule=args.peak_selection_rule,
             step_hours=args.step_hours,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "benchmark-window":
+        out = benchmark_window_impl(
+            case_path=Path(args.case),
+            rules_path=Path(args.rules_path),
+            ephemeris_path=args.ephemeris_path,
+            force_fallback=args.force_fallback,
+        )
+        if args.export_md:
+            export_path = Path(args.export_md)
+            export_path.parent.mkdir(parents=True, exist_ok=True)
+            export_path.write_text(export_benchmark_markdown(out), encoding="utf-8")
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "build-review-queue":
+        out = build_review_queue_impl(benchmark_path=Path(args.from_benchmark), queue_path=Path(args.queue_path))
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "review-item":
+        out = review_item_impl(
+            review_item_id=args.id,
+            status=args.status,
+            notes=args.notes,
+            queue_path=Path(args.queue_path),
+            reviewed_path=Path(args.reviewed_path),
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "export-review":
+        out = export_review_impl(
+            benchmark_path=Path(args.benchmark) if args.benchmark else None,
+            queue_path=Path(args.queue_path),
+            out_path=Path(args.out) if args.out else None,
+            format=args.format,
         )
         print(json.dumps(out, ensure_ascii=False, indent=2))
 

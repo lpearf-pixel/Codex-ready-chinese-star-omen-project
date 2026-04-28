@@ -483,6 +483,40 @@ python -m src.cli scan-window \
 - 支持 event_type：`guarding/invading/conjunction/gathering`
 - 当前为最小扫描层，不是全量长期扫描器，也不是完整历史回测扩容版。
 
+## Sprint 9：小规模历史基准回放与人工复核闭环
+
+目标：从“窗口扫描”推进到“历史基准回放 + review queue + 复核沉淀 + 最小 benchmark 指标”。
+
+### benchmark-window 示例
+
+```bash
+python -m src.cli benchmark-window \
+  --case data/examples/historical_benchmark/case_mars_guarding_xin_001.json \
+  --force-fallback
+```
+
+输出至少包含：
+- `case_id`, `window`
+- `raw_event_count`, `clustered_event_count`
+- `matched_rule_ids`
+- `primary_evidence_hit_rate`, `candidate_only_rate`
+- `benchmark_summary`
+
+### review queue 示例
+
+```bash
+python -m src.cli build-review-queue --from-benchmark /tmp/benchmark_case.json
+python -m src.cli review-item --id review_bench_mars_guarding_xin_001_01 --status accepted --notes \"evidence looks consistent\"
+python -m src.cli export-review --format md --queue-path data/reviews/review_queue.jsonl --out data/reviews/review_summary.md
+```
+
+### 当前能力范围与限制
+
+- 仅支持小规模 benchmark case（`data/examples/historical_benchmark/`）
+- review 为最小队列模型（pending/accepted/rejected/needs_more_evidence）
+- 审阅数据落盘为 JSONL（`review_queue.jsonl` / `reviewed_cases.jsonl`）
+- 不做全量历史扫描，不做大规模回测扩容，不做自动报告系统
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`

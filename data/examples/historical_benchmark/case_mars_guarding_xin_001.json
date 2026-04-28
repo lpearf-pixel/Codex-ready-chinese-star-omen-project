@@ -1,0 +1,13 @@
+{
+  "case_id": "bench_mars_guarding_xin_001",
+  "start_datetime_utc": "2026-01-31T00:00:00Z",
+  "end_datetime_utc": "2026-02-02T00:00:00Z",
+  "location": {"name": "Beijing", "lon": 116.4, "lat": 39.9},
+  "bodies": ["mars", "moon", "jupiter", "saturn"],
+  "targets": ["xin_xiu", "jiao_xiu", "fang_xiu"],
+  "event_types": ["guarding", "invading", "conjunction", "gathering"],
+  "notes": "正例：荧惑守心窗口",
+  "expected_rule_ids": ["rule_mars_guarding_xin_001"],
+  "expected_primary_hit": true,
+  "force_fallback": true
+}
