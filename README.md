@@ -517,6 +517,35 @@ python -m src.cli export-review --format md --queue-path data/reviews/review_que
 - 审阅数据落盘为 JSONL（`review_queue.jsonl` / `reviewed_cases.jsonl`）
 - 不做全量历史扫描，不做大规模回测扩容，不做自动报告系统
 
+## Sprint 10：参数校准与半自动调优闭环
+
+目标：`benchmark/review data -> calibration analysis -> threshold/profile comparison -> tuning suggestions`。
+
+### 关键命令
+
+```bash
+python -m src.cli analyze-reviews --reviewed data/reviews/reviewed_cases.jsonl
+python -m src.cli compare-thresholds --cases data/examples/historical_benchmark --profiles baseline --profiles strict --profiles loose
+python -m src.cli analyze-errors --compare-json /tmp/profile_compare.json --out-dir /tmp/calibration_errors
+python -m src.cli rule-leaderboard --reviewed data/reviews/reviewed_cases.jsonl --format md --out /tmp/rule_leaderboard.md
+python -m src.cli tuning-report --compare-json /tmp/profile_compare.json --review-analysis-json /tmp/review_analysis.json --leaderboard-json /tmp/rule_leaderboard.json --out-json /tmp/tuning_report.json --out-md /tmp/tuning_report.md
+```
+
+### Sprint 10 输出重点
+
+- review-driven 统计（rule/event_type/target 维度 accept/reject rate）
+- threshold profile 对比（baseline/strict/loose/visibility_relaxed）
+- false positive / false negative 分析文件
+- rule-level leaderboard（JSON + Markdown）
+- 最小工程调参建议（JSON + Markdown）
+
+### 范围限制
+
+- 不启动全量历史扫描
+- 不引入复杂机器学习训练
+- 不生成正式预测报告
+- 仅产出可追溯、可复跑的工程调优建议
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`

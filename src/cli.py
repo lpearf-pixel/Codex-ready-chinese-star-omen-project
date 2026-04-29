@@ -25,6 +25,11 @@ from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
 from src.eval.corpus_eval import load_eval_cases, run_corpus_eval
 from src.eval.historical_benchmark import export_benchmark_markdown, load_benchmark_case, run_benchmark_case
+from src.calibration.error_analysis import analyze_errors, write_error_outputs
+from src.calibration.profile_runner import run_profile_compare
+from src.calibration.review_analysis import analyze_review_data
+from src.calibration.rule_leaderboard import build_rule_leaderboard, leaderboard_to_markdown
+from src.calibration.tuning_recommendations import generate_tuning_recommendations, tuning_to_markdown
 from src.astronomy import MinimalAsterismMatcher, MinimalCelestialEventDetector, MinimalWindowScanner, SkyfieldEphemerisProvider, cluster_events
 from src.review.review_queue import (
     DEFAULT_QUEUE_PATH,
@@ -263,6 +268,80 @@ def export_review_impl(
         "queue_item_count": len(queue_rows),
         "out_path": str(out_path) if out_path else None,
         "content": text if not out_path else None,
+    }
+
+
+def analyze_reviews_impl(
+    *,
+    review_queue: Path = DEFAULT_QUEUE_PATH,
+    reviewed: Path = DEFAULT_REVIEWED_PATH,
+    benchmark_json: Path | None = None,
+) -> dict[str, Any]:
+    benchmark_rows = [_load_json(benchmark_json)] if benchmark_json and benchmark_json.exists() else None
+    return analyze_review_data(
+        review_queue_path=review_queue,
+        reviewed_path=reviewed,
+        benchmark_rows=benchmark_rows,
+    )
+
+
+def compare_thresholds_impl(
+    *,
+    cases_path: Path,
+    profiles: list[str],
+    profile_config: Path = Path("config/event_threshold_profiles.yaml"),
+) -> dict[str, Any]:
+    return run_profile_compare(cases_path=cases_path, profiles_path=profile_config, profile_names=profiles)
+
+
+def error_analysis_impl(*, compare_payload: dict[str, Any], out_dir: Path | None = None) -> dict[str, Any]:
+    payload = analyze_errors(compare_payload)
+    out_files = write_error_outputs(payload, out_dir=out_dir) if out_dir else {}
+    return {"analysis": payload, "output_files": out_files}
+
+
+def rule_leaderboard_impl(
+    *,
+    reviewed_path: Path = DEFAULT_REVIEWED_PATH,
+    format: str = "json",
+    out_path: Path | None = None,
+) -> dict[str, Any]:
+    rows = load_jsonl(reviewed_path)
+    leaderboard = build_rule_leaderboard(rows)
+    if format == "md":
+        content = leaderboard_to_markdown(leaderboard)
+        if out_path:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(content, encoding="utf-8")
+        return {"format": "md", "rows": leaderboard, "content": content if not out_path else None, "out_path": str(out_path) if out_path else None}
+    return {"format": "json", "rows": leaderboard}
+
+
+def tuning_report_impl(
+    *,
+    compare_payload: dict[str, Any],
+    review_analysis_payload: dict[str, Any],
+    leaderboard_payload: list[dict[str, Any]],
+    out_json: Path | None = None,
+    out_md: Path | None = None,
+) -> dict[str, Any]:
+    payload = generate_tuning_recommendations(
+        review_analysis=review_analysis_payload,
+        profile_compare=compare_payload,
+        rule_leaderboard=leaderboard_payload,
+    )
+    md = tuning_to_markdown(payload)
+    if out_json:
+        out_json.parent.mkdir(parents=True, exist_ok=True)
+        out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    if out_md:
+        out_md.parent.mkdir(parents=True, exist_ok=True)
+        out_md.write_text(md, encoding="utf-8")
+    return {
+        "report": payload,
+        "markdown": md if not out_md else None,
+        "out_json": str(out_json) if out_json else None,
+        "out_md": str(out_md) if out_md else None,
     }
 
 
@@ -706,6 +785,67 @@ if typer:
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+    @app.command("analyze-reviews")
+    def analyze_reviews_cmd(
+        review_queue: Path = typer.Option(DEFAULT_QUEUE_PATH, "--review-queue"),
+        reviewed: Path = typer.Option(DEFAULT_REVIEWED_PATH, "--reviewed"),
+        benchmark: Path | None = typer.Option(None, "--benchmark"),
+    ):
+        out = analyze_reviews_impl(review_queue=review_queue, reviewed=reviewed, benchmark_json=benchmark)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+    @app.command("compare-thresholds")
+    def compare_thresholds_cmd(
+        cases: Path = typer.Option(..., "--cases"),
+        profiles: list[str] = typer.Option(["baseline", "strict", "loose"], "--profiles"),
+        profile_config: Path = typer.Option(Path("config/event_threshold_profiles.yaml"), "--profile-config"),
+    ):
+        out = compare_thresholds_impl(cases_path=cases, profiles=profiles, profile_config=profile_config)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+    @app.command("analyze-errors")
+    def analyze_errors_cmd(
+        compare_json: Path = typer.Option(..., "--compare-json"),
+        out_dir: Path | None = typer.Option(None, "--out-dir"),
+    ):
+        payload = _load_json(compare_json)
+        out = error_analysis_impl(compare_payload=payload, out_dir=out_dir)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+    @app.command("rule-leaderboard")
+    def rule_leaderboard_cmd(
+        reviewed: Path = typer.Option(DEFAULT_REVIEWED_PATH, "--reviewed"),
+        format: str = typer.Option("json", "--format"),
+        out: Path | None = typer.Option(None, "--out"),
+    ):
+        out_payload = rule_leaderboard_impl(reviewed_path=reviewed, format=format, out_path=out)
+        typer.echo(json.dumps(out_payload, ensure_ascii=False, indent=2))
+
+
+    @app.command("tuning-report")
+    def tuning_report_cmd(
+        compare_json: Path = typer.Option(..., "--compare-json"),
+        review_analysis_json: Path = typer.Option(..., "--review-analysis-json"),
+        leaderboard_json: Path = typer.Option(..., "--leaderboard-json"),
+        out_json: Path | None = typer.Option(None, "--out-json"),
+        out_md: Path | None = typer.Option(None, "--out-md"),
+    ):
+        compare_payload = _load_json(compare_json)
+        review_payload = _load_json(review_analysis_json)
+        leaderboard_payload = (_load_json(leaderboard_json) or {}).get("rows", [])
+        out_payload = tuning_report_impl(
+            compare_payload=compare_payload,
+            review_analysis_payload=review_payload,
+            leaderboard_payload=leaderboard_payload,
+            out_json=out_json,
+            out_md=out_md,
+        )
+        typer.echo(json.dumps(out_payload, ensure_ascii=False, indent=2))
+
+
 
 def _main_fallback():  # pragma: no cover
     parser = argparse.ArgumentParser(description="Chinese astro model CLI")
@@ -793,6 +933,27 @@ def _main_fallback():  # pragma: no cover
     p_export_review.add_argument("--benchmark")
     p_export_review.add_argument("--queue-path", default=str(DEFAULT_QUEUE_PATH))
     p_export_review.add_argument("--out")
+    p_analyze_reviews = sub.add_parser("analyze-reviews")
+    p_analyze_reviews.add_argument("--review-queue", default=str(DEFAULT_QUEUE_PATH))
+    p_analyze_reviews.add_argument("--reviewed", default=str(DEFAULT_REVIEWED_PATH))
+    p_analyze_reviews.add_argument("--benchmark")
+    p_compare = sub.add_parser("compare-thresholds")
+    p_compare.add_argument("--cases", required=True)
+    p_compare.add_argument("--profiles", action="append", default=[])
+    p_compare.add_argument("--profile-config", default="config/event_threshold_profiles.yaml")
+    p_err = sub.add_parser("analyze-errors")
+    p_err.add_argument("--compare-json", required=True)
+    p_err.add_argument("--out-dir")
+    p_lb = sub.add_parser("rule-leaderboard")
+    p_lb.add_argument("--reviewed", default=str(DEFAULT_REVIEWED_PATH))
+    p_lb.add_argument("--format", default="json")
+    p_lb.add_argument("--out")
+    p_tune = sub.add_parser("tuning-report")
+    p_tune.add_argument("--compare-json", required=True)
+    p_tune.add_argument("--review-analysis-json", required=True)
+    p_tune.add_argument("--leaderboard-json", required=True)
+    p_tune.add_argument("--out-json")
+    p_tune.add_argument("--out-md")
 
     args = parser.parse_args()
     if args.cmd == "validate-data":
@@ -901,6 +1062,43 @@ def _main_fallback():  # pragma: no cover
             queue_path=Path(args.queue_path),
             out_path=Path(args.out) if args.out else None,
             format=args.format,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "analyze-reviews":
+        out = analyze_reviews_impl(
+            review_queue=Path(args.review_queue),
+            reviewed=Path(args.reviewed),
+            benchmark_json=Path(args.benchmark) if args.benchmark else None,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "compare-thresholds":
+        out = compare_thresholds_impl(
+            cases_path=Path(args.cases),
+            profiles=args.profiles or ["baseline", "strict", "loose"],
+            profile_config=Path(args.profile_config),
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "analyze-errors":
+        out = error_analysis_impl(
+            compare_payload=_load_json(Path(args.compare_json)),
+            out_dir=Path(args.out_dir) if args.out_dir else None,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "rule-leaderboard":
+        out = rule_leaderboard_impl(
+            reviewed_path=Path(args.reviewed),
+            format=args.format,
+            out_path=Path(args.out) if args.out else None,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "tuning-report":
+        leaderboard_payload = (_load_json(Path(args.leaderboard_json)) or {}).get("rows", [])
+        out = tuning_report_impl(
+            compare_payload=_load_json(Path(args.compare_json)),
+            review_analysis_payload=_load_json(Path(args.review_analysis_json)),
+            leaderboard_payload=leaderboard_payload,
+            out_json=Path(args.out_json) if args.out_json else None,
+            out_md=Path(args.out_md) if args.out_md else None,
         )
         print(json.dumps(out, ensure_ascii=False, indent=2))
 

@@ -19,6 +19,7 @@ def run_benchmark_case(
     ephemeris_path: str | None = None,
     force_fallback: bool = False,
     reviewed_path: Path = DEFAULT_REVIEWED_PATH,
+    threshold_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     scanner = MinimalWindowScanner(
         ephemeris_path=ephemeris_path,
@@ -36,6 +37,19 @@ def run_benchmark_case(
         event_types=list(case.get("event_types") or ["guarding", "invading", "conjunction", "gathering"]),
         rules_path=rules_path,
     )
+    if threshold_profile:
+        scanner.thresholds = threshold_profile
+        scanner.detector.thresholds = threshold_profile
+        scan = scanner.scan(
+            start_datetime_utc=str(case["start_datetime_utc"]),
+            end_datetime_utc=str(case["end_datetime_utc"]),
+            lon=float(case["location"]["lon"]),
+            lat=float(case["location"]["lat"]),
+            bodies=list(case.get("bodies") or ["mars", "moon", "jupiter", "saturn"]),
+            targets=list(case.get("targets") or ["xin_xiu", "jiao_xiu", "fang_xiu"]),
+            event_types=list(case.get("event_types") or ["guarding", "invading", "conjunction", "gathering"]),
+            rules_path=rules_path,
+        )
     expected_rule_ids = set(case.get("expected_rule_ids") or [])
     matched_rule_ids = set(scan.get("matched_rule_ids") or [])
     expected_primary = bool(case.get("expected_primary_hit", False))
