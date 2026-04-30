@@ -30,9 +30,12 @@ from src.calibration.experiment_runner import create_calibration_snapshot, run_c
 from src.calibration.profile_compare_report import build_profile_compare_report, profile_compare_markdown
 from src.calibration.profile_registry import promote_profile, propose_profile, rollback_profile
 from src.calibration.profile_runner import run_profile_compare
+from src.calibration.profile_stability import analyze_profile_stability
 from src.calibration.review_analysis import analyze_review_data
 from src.calibration.rule_leaderboard import build_rule_leaderboard, leaderboard_to_markdown
 from src.calibration.tuning_recommendations import generate_tuning_recommendations, tuning_to_markdown
+from src.pipeline.batch_runner import run_batch
+from src.research.templates import render_layered_template
 from src.astronomy import MinimalAsterismMatcher, MinimalCelestialEventDetector, MinimalWindowScanner, SkyfieldEphemerisProvider, cluster_events
 from src.review.review_queue import (
     DEFAULT_QUEUE_PATH,
@@ -350,6 +353,37 @@ def tuning_report_impl(
 
 def run_calibration_experiment_impl(*, profile: str, cases: Path, review_source: Path = DEFAULT_REVIEWED_PATH) -> dict[str, Any]:
     return run_calibration_experiment(profile_name=profile, cases_path=cases, review_source=review_source)
+
+
+def run_batch_impl(*, cases: Path, profiles: list[str]) -> dict[str, Any]:
+    return run_batch(cases_dir=cases, profiles=profiles)
+
+
+def export_batch_index_impl(*, run_id: str, format: str = "json") -> dict[str, Any]:
+    run_dir = Path("data/runs") / run_id
+    if format == "md":
+        return {"run_id": run_id, "format": "md", "content": (run_dir / "report_index.md").read_text(encoding="utf-8")}
+    return {"run_id": run_id, "format": "json", "content": _load_json(run_dir / "report_index.json")}
+
+
+def profile_stability_impl(*, profile: str) -> dict[str, Any]:
+    return analyze_profile_stability(profile_name=profile)
+
+
+def export_layered_report_impl(*, run_id: str, level: str) -> dict[str, Any]:
+    run_dir = Path("data/runs") / run_id
+    rows = _load_json(run_dir / "results.json")
+    selected = [r for r in rows if r.get("output_level") == level]
+    out_dir = run_dir / "layered_reports" / level
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = []
+    for row in selected:
+        name = f"{row.get('case_id')}.md"
+        text = render_layered_template(level=level, row=row)
+        p = out_dir / name
+        p.write_text(text, encoding="utf-8")
+        files.append(str(p))
+    return {"run_id": run_id, "level": level, "count": len(files), "files": files}
 
 
 def validate_data_impl(
@@ -910,6 +944,35 @@ if typer:
         )
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
+    @app.command("run-batch")
+    def run_batch_cmd(
+        cases: Path = typer.Option(..., "--cases"),
+        profiles: list[str] = typer.Option(["baseline", "strict"], "--profiles"),
+    ):
+        out = run_batch_impl(cases=cases, profiles=profiles)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+    @app.command("export-batch-index")
+    def export_batch_index_cmd(
+        run: str = typer.Option(..., "--run"),
+        format: str = typer.Option("json", "--format"),
+    ):
+        out = export_batch_index_impl(run_id=run, format=format)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+    @app.command("profile-stability")
+    def profile_stability_cmd(profile: str = typer.Option(..., "--profile")):
+        out = profile_stability_impl(profile=profile)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+    @app.command("export-layered-report")
+    def export_layered_report_cmd(
+        run: str = typer.Option(..., "--run"),
+        level: str = typer.Option(..., "--level"),
+    ):
+        out = export_layered_report_impl(run_id=run, level=level)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
 
 
 def _main_fallback():  # pragma: no cover
@@ -1043,6 +1106,18 @@ def _main_fallback():  # pragma: no cover
     p_snap = sub.add_parser("create-calibration-snapshot")
     p_snap.add_argument("--experiment-json", required=True)
     p_snap.add_argument("--recommendation-json", required=True)
+
+    p_run_batch = sub.add_parser("run-batch")
+    p_run_batch.add_argument("--cases", required=True)
+    p_run_batch.add_argument("--profiles", action="append", default=[])
+    p_exp_idx = sub.add_parser("export-batch-index")
+    p_exp_idx.add_argument("--run", required=True)
+    p_exp_idx.add_argument("--format", default="json")
+    p_stab = sub.add_parser("profile-stability")
+    p_stab.add_argument("--profile", required=True)
+    p_layer = sub.add_parser("export-layered-report")
+    p_layer.add_argument("--run", required=True)
+    p_layer.add_argument("--level", required=True)
 
     args = parser.parse_args()
     if args.cmd == "validate-data":
@@ -1198,6 +1273,19 @@ def _main_fallback():  # pragma: no cover
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "rollback-profile":
         out = rollback_profile(to_profile=args.to)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+
+    elif args.cmd == "run-batch":
+        out = run_batch_impl(cases=Path(args.cases), profiles=args.profiles or ["baseline", "strict"])
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "export-batch-index":
+        out = export_batch_index_impl(run_id=args.run, format=args.format)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "profile-stability":
+        out = profile_stability_impl(profile=args.profile)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "export-layered-report":
+        out = export_layered_report_impl(run_id=args.run, level=args.level)
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "create-calibration-snapshot":
         out = create_calibration_snapshot(experiment_payload=_load_json(Path(args.experiment_json)), recommendation_summary=_load_json(Path(args.recommendation_json)))

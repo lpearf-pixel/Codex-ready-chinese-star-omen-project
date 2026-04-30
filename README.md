@@ -562,6 +562,28 @@ python -m src.cli create-calibration-snapshot --experiment-json /tmp/exp.json --
 
 说明：当前仍是“人工确认 + 工程治理”流程，不是自动机器学习调参，不是正式预测报告系统。
 
+## Sprint 12：观测批处理与研究输出分层
+
+目标：可批量运行观测窗口/benchmark，并按输出等级组织研究结果，为后续正式推演流程提供候选信号。
+
+示例：
+
+```bash
+python -m src.cli run-batch --cases data/examples/historical_benchmark --profiles baseline --profiles strict
+python -m src.cli export-batch-index --run <run_id> --format md
+python -m src.cli profile-stability --profile baseline
+python -m src.cli export-layered-report --run <run_id> --level formal_candidate
+```
+
+输出等级：
+- `research_draft`
+- `internal_observation`
+- `formal_candidate`
+
+当前限制：
+- 仅研究用途分层输出，不是自动正式发布
+- 不做全量历史扫描，不做 ML 自动学习
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`
