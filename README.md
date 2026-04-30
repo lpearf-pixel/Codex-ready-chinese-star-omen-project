@@ -546,6 +546,22 @@ python -m src.cli tuning-report --compare-json /tmp/profile_compare.json --revie
 - 不生成正式预测报告
 - 仅产出可追溯、可复跑的工程调优建议
 
+## Sprint 11：调优实验执行与参数版本治理
+
+目标：把调优建议升级为可执行实验，并建立 profile 版本治理（proposal/promotion/rollback）与 calibration snapshot。
+
+关键命令：
+
+```bash
+python -m src.cli run-calibration-experiment --profile baseline --cases data/examples/historical_benchmark
+python -m src.cli propose-profile --profile strict
+python -m src.cli promote-profile --profile strict --experiment-json /tmp/exp.json --compare-json /tmp/compare.json
+python -m src.cli rollback-profile --to baseline
+python -m src.cli create-calibration-snapshot --experiment-json /tmp/exp.json --recommendation-json /tmp/tuning.json
+```
+
+说明：当前仍是“人工确认 + 工程治理”流程，不是自动机器学习调参，不是正式预测报告系统。
+
 ## 测试报告入口
 
 - 最新本地测试报告见：`docs/test_report.md`

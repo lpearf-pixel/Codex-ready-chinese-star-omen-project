@@ -26,6 +26,9 @@ from src.connectors.manifest_reader import ManifestReader
 from src.eval.corpus_eval import load_eval_cases, run_corpus_eval
 from src.eval.historical_benchmark import export_benchmark_markdown, load_benchmark_case, run_benchmark_case
 from src.calibration.error_analysis import analyze_errors, write_error_outputs
+from src.calibration.experiment_runner import create_calibration_snapshot, run_calibration_experiment
+from src.calibration.profile_compare_report import build_profile_compare_report, profile_compare_markdown
+from src.calibration.profile_registry import promote_profile, propose_profile, rollback_profile
 from src.calibration.profile_runner import run_profile_compare
 from src.calibration.review_analysis import analyze_review_data
 from src.calibration.rule_leaderboard import build_rule_leaderboard, leaderboard_to_markdown
@@ -343,6 +346,10 @@ def tuning_report_impl(
         "out_json": str(out_json) if out_json else None,
         "out_md": str(out_md) if out_md else None,
     }
+
+
+def run_calibration_experiment_impl(*, profile: str, cases: Path, review_source: Path = DEFAULT_REVIEWED_PATH) -> dict[str, Any]:
+    return run_calibration_experiment(profile_name=profile, cases_path=cases, review_source=review_source)
 
 
 def validate_data_impl(
@@ -845,6 +852,64 @@ if typer:
         )
         typer.echo(json.dumps(out_payload, ensure_ascii=False, indent=2))
 
+    @app.command("run-calibration-experiment")
+    def run_calibration_experiment_cmd(
+        profile: str = typer.Option(..., "--profile"),
+        cases: Path = typer.Option(..., "--cases"),
+        review_source: Path = typer.Option(DEFAULT_REVIEWED_PATH, "--review-source"),
+    ):
+        out = run_calibration_experiment_impl(profile=profile, cases=cases, review_source=review_source)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+    @app.command("compare-profiles")
+    def compare_profiles_cmd(
+        compare_json: Path = typer.Option(..., "--compare-json"),
+        baseline: str = typer.Option("baseline", "--baseline"),
+        candidate: str = typer.Option(..., "--candidate"),
+        out_md: Path | None = typer.Option(None, "--out-md"),
+    ):
+        payload = build_profile_compare_report(_load_json(compare_json), baseline=baseline, candidate=candidate)
+        md = profile_compare_markdown(payload)
+        if out_md:
+            out_md.parent.mkdir(parents=True, exist_ok=True)
+            out_md.write_text(md, encoding="utf-8")
+        typer.echo(json.dumps({"report": payload, "markdown": md if not out_md else None, "out_md": str(out_md) if out_md else None}, ensure_ascii=False, indent=2))
+
+    @app.command("propose-profile")
+    def propose_profile_cmd(
+        profile: str = typer.Option(..., "--profile"),
+        source_file: str = typer.Option("config/event_threshold_profiles.yaml", "--source-file"),
+        parent_profile: str | None = typer.Option(None, "--parent-profile"),
+        change_summary: str = typer.Option("sprint11 proposal", "--change-summary"),
+    ):
+        out = propose_profile(profile_name=profile, source_file=source_file, parent_profile=parent_profile, change_summary=change_summary)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+    @app.command("promote-profile")
+    def promote_profile_cmd(
+        profile: str = typer.Option(..., "--profile"),
+        experiment_json: Path = typer.Option(..., "--experiment-json"),
+        compare_json: Path = typer.Option(..., "--compare-json"),
+    ):
+        out = promote_profile(profile_name=profile, experiment_exists=experiment_json.exists(), compare_exists=compare_json.exists())
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+    @app.command("rollback-profile")
+    def rollback_profile_cmd(to: str = typer.Option(..., "--to")):
+        out = rollback_profile(to_profile=to)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+    @app.command("create-calibration-snapshot")
+    def create_calibration_snapshot_cmd(
+        experiment_json: Path = typer.Option(..., "--experiment-json"),
+        recommendation_json: Path = typer.Option(..., "--recommendation-json"),
+    ):
+        out = create_calibration_snapshot(
+            experiment_payload=_load_json(experiment_json),
+            recommendation_summary=_load_json(recommendation_json),
+        )
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
 
 
 def _main_fallback():  # pragma: no cover
@@ -954,6 +1019,30 @@ def _main_fallback():  # pragma: no cover
     p_tune.add_argument("--leaderboard-json", required=True)
     p_tune.add_argument("--out-json")
     p_tune.add_argument("--out-md")
+
+    p_run_exp = sub.add_parser("run-calibration-experiment")
+    p_run_exp.add_argument("--profile", required=True)
+    p_run_exp.add_argument("--cases", required=True)
+    p_run_exp.add_argument("--review-source", default=str(DEFAULT_REVIEWED_PATH))
+    p_cmp_prof = sub.add_parser("compare-profiles")
+    p_cmp_prof.add_argument("--compare-json", required=True)
+    p_cmp_prof.add_argument("--baseline", default="baseline")
+    p_cmp_prof.add_argument("--candidate", required=True)
+    p_cmp_prof.add_argument("--out-md")
+    p_prop = sub.add_parser("propose-profile")
+    p_prop.add_argument("--profile", required=True)
+    p_prop.add_argument("--source-file", default="config/event_threshold_profiles.yaml")
+    p_prop.add_argument("--parent-profile")
+    p_prop.add_argument("--change-summary", default="sprint11 proposal")
+    p_prom = sub.add_parser("promote-profile")
+    p_prom.add_argument("--profile", required=True)
+    p_prom.add_argument("--experiment-json", required=True)
+    p_prom.add_argument("--compare-json", required=True)
+    p_rb = sub.add_parser("rollback-profile")
+    p_rb.add_argument("--to", required=True)
+    p_snap = sub.add_parser("create-calibration-snapshot")
+    p_snap.add_argument("--experiment-json", required=True)
+    p_snap.add_argument("--recommendation-json", required=True)
 
     args = parser.parse_args()
     if args.cmd == "validate-data":
@@ -1090,6 +1179,28 @@ def _main_fallback():  # pragma: no cover
             format=args.format,
             out_path=Path(args.out) if args.out else None,
         )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+
+    elif args.cmd == "run-calibration-experiment":
+        out = run_calibration_experiment_impl(profile=args.profile, cases=Path(args.cases), review_source=Path(args.review_source))
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "compare-profiles":
+        rep = build_profile_compare_report(_load_json(Path(args.compare_json)), baseline=args.baseline, candidate=args.candidate)
+        md = profile_compare_markdown(rep)
+        if args.out_md:
+            Path(args.out_md).write_text(md, encoding="utf-8")
+        print(json.dumps({"report": rep, "markdown": md if not args.out_md else None, "out_md": args.out_md}, ensure_ascii=False, indent=2))
+    elif args.cmd == "propose-profile":
+        out = propose_profile(profile_name=args.profile, source_file=args.source_file, parent_profile=args.parent_profile, change_summary=args.change_summary)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "promote-profile":
+        out = promote_profile(profile_name=args.profile, experiment_exists=Path(args.experiment_json).exists(), compare_exists=Path(args.compare_json).exists())
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "rollback-profile":
+        out = rollback_profile(to_profile=args.to)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "create-calibration-snapshot":
+        out = create_calibration_snapshot(experiment_payload=_load_json(Path(args.experiment_json)), recommendation_summary=_load_json(Path(args.recommendation_json)))
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "tuning-report":
         leaderboard_payload = (_load_json(Path(args.leaderboard_json)) or {}).get("rows", [])

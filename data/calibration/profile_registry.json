@@ -1,0 +1,13 @@
+{
+  "profiles": [
+    {
+      "profile_name": "baseline",
+      "source_file": "config/event_threshold_profiles.yaml",
+      "status": "baseline",
+      "parent_profile": null,
+      "change_summary": "initial baseline",
+      "created_at": "2026-04-30T00:00:00Z",
+      "updated_at": "2026-04-30T00:00:00Z"
+    }
+  ]
+}
