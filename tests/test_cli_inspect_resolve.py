@@ -13,6 +13,7 @@ from src.cli import app
 
 def test_inspect_knowledge_default_only_one_exact_and_no_related(monkeypatch, tmp_path):
     def fake_two_stage(self, query, **kwargs):
+        assert kwargs.get("query_mode") in {None, "knowledge"}
         return {
             "stage1": {
                 "query_mode": "knowledge",
@@ -43,6 +44,8 @@ def test_inspect_knowledge_default_only_one_exact_and_no_related(monkeypatch, tm
 
 def test_inspect_evidence_primary_missing_marks_candidate_only(monkeypatch):
     def fake_two_stage(self, query, **kwargs):
+        assert kwargs.get("query_mode") == "evidence"
+        assert kwargs.get("literal_first") is True
         return {
             "stage1": {
                 "query_mode": "evidence",
@@ -67,6 +70,17 @@ def test_inspect_evidence_primary_missing_marks_candidate_only(monkeypatch):
     body = json.loads(result.stdout)
     assert body["query_mode"] == "evidence"
     assert body["structured_fallbacks"][0]["status"] == "candidate_only"
+
+
+def test_inspect_book_id_maps_to_kb_book_id(monkeypatch):
+    def fake_two_stage(self, query, **kwargs):
+        assert kwargs["filters"]["kb_book_id"] == "kaiyuan_zhanjing"
+        return {"stage1": {"query_mode": "knowledge", "hits": [], "exact_hits": [], "related_hits": []}, "stage2": {"hits": [], "primary_candidates": []}}
+
+    monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect-kb", "--query", "心宿", "--book-id", "kaiyuan_zhanjing"])
+    assert result.exit_code == 0
 
 
 def test_inspect_fallback_stats_present_when_used(monkeypatch):

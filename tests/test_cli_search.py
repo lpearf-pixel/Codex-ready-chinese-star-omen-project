@@ -15,7 +15,7 @@ def test_search_kb_command(monkeypatch):
     def fake_search(self, query, **kwargs):
         assert query == "荧惑守心"
         assert kwargs["top_k"] == 5
-        assert kwargs["filters"]["book_id"] == "kaiyuan_zhanjing"
+        assert kwargs["filters"]["kb_book_id"] == "kaiyuan_zhanjing"
         assert kwargs["filters"]["card_type"] == ["term_card"]
         return {"hits": [{"id": "x1"}]}
 

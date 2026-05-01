@@ -35,7 +35,7 @@ def test_retrieve_request_payload(monkeypatch):
     r.retrieve(
         "荧惑",
         top_k=5,
-        filters={"book_id": "kaiyuan_zhanjing", "card_type": ["term_card"], "evidence_level": "structured"},
+        filters={"kb_book_id": "kaiyuan_zhanjing", "card_type": ["term_card"], "evidence_level": "structured"},
         query_mode="knowledge",
         literal_first=False,
         literal_pool_factor=3,
@@ -45,7 +45,7 @@ def test_retrieve_request_payload(monkeypatch):
     assert captured["use_auth"] is True
     assert captured["payload"]["query"] == "荧惑"
     assert captured["payload"]["top_k"] == 5
-    assert captured["payload"]["filters"]["book_id"] == "kaiyuan_zhanjing"
+    assert captured["payload"]["filters"]["kb_book_id"] == "kaiyuan_zhanjing"
     assert captured["payload"]["query_mode"] == "knowledge"
     assert captured["payload"]["literal_first"] is False
     assert captured["payload"]["literal_pool_factor"] == 3
@@ -122,7 +122,7 @@ def test_phrase_fallback_finds_primary_candidate(monkeypatch):
     monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", fake_scan)
     r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k")
 
-    out = r.two_stage_retrieve("荧惑守心", filters={"book_id": "kaiyuan_zhanjing"})
+    out = r.two_stage_retrieve("荧惑守心", filters={"kb_book_id": "kaiyuan_zhanjing"})
     assert out["stage2"]["primary_candidates"]
     assert out["stage2"]["primary_candidates"][0]["card_type"] in {"fenjuan", "fulltext"}
     assert out["stage2"]["fallback_used"] is True
@@ -163,7 +163,7 @@ def test_stage2_uses_primary_not_structured(monkeypatch):
         ),
     )
 
-    out = r.two_stage_retrieve("心宿", filters={"book_id": "kaiyuan_zhanjing"}, top_k=3)
+    out = r.two_stage_retrieve("心宿", filters={"kb_book_id": "kaiyuan_zhanjing"}, top_k=3)
     assert out["stage2"]["primary_candidates"][0]["card_type"] == "fenjuan"
     assert out["stage2"]["only_structured_no_primary"] is False
 

@@ -440,14 +440,20 @@ def inspect_kb_impl(
     api_key: str | None = None,
     collection: str | None = None,
     show_related: bool = False,
+    query_mode: str | None = None,
+    literal_first: bool | None = None,
 ):
     settings = get_settings()
     effective_limit = limit if limit is not None else settings.app_default_limit
     if query:
+        if query_mode is None and query in KBSearchRetriever.PRIMARY_ONLY_PHRASES:
+            query_mode = "evidence"
+        if literal_first is None and query_mode == "evidence":
+            literal_first = True
         retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
         filters: dict[str, Any] = {}
         if book_id:
-            filters["book_id"] = book_id
+            filters["kb_book_id"] = book_id
         if card_type:
             filters["card_type"] = card_type
         if evidence_level:
@@ -458,6 +464,8 @@ def inspect_kb_impl(
                 top_k=effective_limit,
                 collection=collection,
                 filters=filters or None,
+                query_mode=query_mode,
+                literal_first=literal_first,
             )
         except Exception as exc:
             return {
@@ -594,8 +602,10 @@ if typer:
         api_key: str | None = typer.Option(None, "--api-key"),
         show_related: bool = typer.Option(False, "--show-related"),
         show_raw: bool = typer.Option(False, "--show-raw"),
+        query_mode: str | None = typer.Option(None, "--query-mode"),
+        literal_first: bool | None = typer.Option(None, "--literal-first"),
     ):
-        out = inspect_kb_impl(root, query, book_id, card_type, evidence_level, limit, show_raw, base_url, api_key, collection, show_related)
+        out = inspect_kb_impl(root, query, book_id, card_type, evidence_level, limit, show_raw, base_url, api_key, collection, show_related, query_mode, literal_first)
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
@@ -632,20 +642,28 @@ if typer:
         retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
         filters: dict[str, Any] = {}
         if book_id:
-            filters["book_id"] = book_id
+            filters["kb_book_id"] = book_id
         if card_type:
             filters["card_type"] = card_type
         if evidence_level:
             filters["evidence_level"] = evidence_level
-        result = retriever.search(
-            query,
-            top_k=top_k,
-            collection=collection,
-            filters=filters or None,
-            query_mode=query_mode,
-            literal_first=literal_first,
-            literal_pool_factor=literal_pool_factor,
-        )
+        try:
+            result = retriever.search(
+                query,
+                top_k=top_k,
+                collection=collection,
+                filters=filters or None,
+                query_mode=query_mode,
+                literal_first=literal_first,
+                literal_pool_factor=literal_pool_factor,
+            )
+        except Exception as exc:
+            result = {
+                "mode": "search",
+                "query": query,
+                "error": str(exc),
+                "hint": "check KB_SEARCH_API_KEY and kb-search service",
+            }
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
@@ -993,6 +1011,8 @@ def _main_fallback():  # pragma: no cover
     p_inspect.add_argument("--api-key")
     p_inspect.add_argument("--show-related", action="store_true")
     p_inspect.add_argument("--show-raw", action="store_true")
+    p_inspect.add_argument("--query-mode")
+    p_inspect.add_argument("--literal-first", action="store_true")
 
     p_resolve = sub.add_parser("resolve-evidence")
     p_resolve.add_argument("--rule", required=True)
@@ -1010,6 +1030,18 @@ def _main_fallback():  # pragma: no cover
     p_match.add_argument("--rules-path", default="data/processed/corpus/sample_rules.json")
     p_match.add_argument("--kb-root")
     p_detect = sub.add_parser("detect-and-match")
+    p_search = sub.add_parser("search-kb")
+    p_search.add_argument("query")
+    p_search.add_argument("--book-id")
+    p_search.add_argument("--card-type", action="append")
+    p_search.add_argument("--evidence-level")
+    p_search.add_argument("--top-k", type=int, default=None)
+    p_search.add_argument("--collection")
+    p_search.add_argument("--query-mode")
+    p_search.add_argument("--literal-first", action="store_true")
+    p_search.add_argument("--literal-pool-factor", type=int, default=None)
+    p_search.add_argument("--base-url")
+    p_search.add_argument("--api-key")
     p_detect.add_argument("--datetime", required=True)
     p_detect.add_argument("--lon", type=float, required=True)
     p_detect.add_argument("--lat", type=float, required=True)
@@ -1136,6 +1168,8 @@ def _main_fallback():  # pragma: no cover
             args.api_key,
             args.collection,
             args.show_related,
+            args.query_mode,
+            (True if args.literal_first else None),
         )
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "resolve-evidence":
@@ -1152,6 +1186,28 @@ def _main_fallback():  # pragma: no cover
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "match-rule":
         out = run_match_rule(event_path=Path(args.event), rules_path=Path(args.rules_path), kb_root=Path(args.kb_root) if args.kb_root else None)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "search-kb":
+        retriever = KBSearchRetriever(base_url=args.base_url, api_key=args.api_key)
+        filters: dict[str, Any] = {}
+        if args.book_id:
+            filters["kb_book_id"] = args.book_id
+        if args.card_type:
+            filters["card_type"] = args.card_type
+        if args.evidence_level:
+            filters["evidence_level"] = args.evidence_level
+        try:
+            out = retriever.search(
+                args.query,
+                top_k=args.top_k,
+                collection=args.collection,
+                filters=filters or None,
+                query_mode=args.query_mode,
+                literal_first=(True if args.literal_first else None),
+                literal_pool_factor=args.literal_pool_factor,
+            )
+        except Exception as exc:
+            out = {"mode": "search", "query": args.query, "error": str(exc), "hint": "check KB_SEARCH_API_KEY and kb-search service"}
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "detect-and-match":
         out = run_detect_and_match_pipeline(

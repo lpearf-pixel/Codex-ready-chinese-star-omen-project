@@ -157,11 +157,13 @@ class KBSearchRetriever:
             anchor_text = hit.get("anchor_text") or upstream_meta.get("anchor_text")
             if not anchor_text:
                 anchor_text = str(hit.get("snippet") or "")[:120]
+            kb_book_id = hit.get("kb_book_id") or upstream_meta.get("kb_book_id") or hit.get("book_id") or upstream_meta.get("book_id") or inferred.get("book_id")
             inferred_hits.append(
                 {
                     **hit,
                     "book_title": hit.get("book_title") or upstream_meta.get("book_title") or inferred.get("book_title"),
-                    "book_id": hit.get("book_id") or upstream_meta.get("book_id") or inferred.get("book_id"),
+                    "kb_book_id": kb_book_id,
+                    "book_id": kb_book_id,
                     "card_type": hit.get("card_type") or upstream_meta.get("card_type") or inferred.get("card_type"),
                     "evidence_level": hit.get("evidence_level") or upstream_meta.get("evidence_level") or inferred.get("evidence_level"),
                     "volume": volume,
@@ -239,7 +241,7 @@ class KBSearchRetriever:
     ) -> list[dict[str, Any]]:
         out = inferred_hits
         if book_id:
-            out = [h for h in out if h.get("book_id") == book_id]
+            out = [h for h in out if (h.get("kb_book_id") or h.get("book_id")) == book_id]
         if card_types:
             allowed = set(card_types)
             out = [h for h in out if h.get("card_type") in allowed]
@@ -270,7 +272,7 @@ class KBSearchRetriever:
                 meta = infer_metadata_from_path(normalized)
                 if meta.get("card_type") not in {"fenjuan", "fulltext"}:
                     continue
-                if book_id and meta.get("book_id") != book_id:
+                if book_id and (meta.get("kb_book_id") or meta.get("book_id")) != book_id:
                     continue
                 try:
                     text = path.read_text(encoding="utf-8")
@@ -298,7 +300,8 @@ class KBSearchRetriever:
                         "source_type": "docs",
                         "title": self._basename(normalized),
                         "book_title": meta.get("book_title"),
-                        "book_id": meta.get("book_id"),
+                        "kb_book_id": meta.get("kb_book_id") or meta.get("book_id"),
+                        "book_id": meta.get("kb_book_id") or meta.get("book_id"),
                         "card_type": meta.get("card_type"),
                         "evidence_level": meta.get("evidence_level"),
                     }
@@ -348,6 +351,8 @@ class KBSearchRetriever:
             "query_t2s": self.settings.kb_search_query_t2s,
         }
         if filters:
+            if "book_id" in filters and "kb_book_id" not in filters:
+                filters = {**filters, "kb_book_id": filters.get("book_id")}
             payload["filters"] = filters
         if literal_pool_factor is not None:
             payload["literal_pool_factor"] = literal_pool_factor
@@ -403,7 +408,7 @@ class KBSearchRetriever:
             "collection": collection or self.default_collection,
         }
         if book_id:
-            payload["book_id"] = book_id
+            payload["kb_book_id"] = book_id
         return self._request("POST", "/v1/rag/query", json_payload=payload, use_auth=True)
 
     def search(
@@ -465,7 +470,7 @@ class KBSearchRetriever:
             top_structured = stage1["hits"][0]
             structured_seed = str(top_structured.get("title") or self._basename(top_structured.get("path")) or query)
 
-        book_id = filters.get("book_id") if filters else None
+        book_id = (filters.get("kb_book_id") or filters.get("book_id")) if filters else None
         primary_candidates, scan_stats = self._scan_primary_files(
             structured_seed,
             book_id=book_id,
