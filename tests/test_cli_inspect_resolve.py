@@ -83,6 +83,51 @@ def test_inspect_book_id_maps_to_kb_book_id(monkeypatch):
     assert result.exit_code == 0
 
 
+def test_inspect_phrase_explicit_evidence_literal_first_show_raw_hits(monkeypatch):
+    def fake_two_stage(self, query, **kwargs):
+        assert query == "荧惑守心"
+        assert kwargs["filters"]["kb_book_id"] == "kaiyuan_zhanjing"
+        assert kwargs.get("query_mode") == "evidence"
+        assert kwargs.get("literal_first") is True
+        return {
+            "stage1": {
+                "query_mode": "evidence",
+                "hits": [
+                    {
+                        "id": "hit1",
+                        "text": "荧惑守心",
+                        "kb_book_id": "kaiyuan_zhanjing",
+                        "card_type": "fenjuan",
+                    }
+                ],
+                "exact_hits": [{"id": "hit1"}],
+                "related_hits": [],
+            },
+            "stage2": {"hits": [], "primary_candidates": [], "fallback_used": False},
+        }
+
+    monkeypatch.setattr("src.cli.KBSearchRetriever.two_stage_retrieve", fake_two_stage)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "inspect-kb",
+            "--query",
+            "荧惑守心",
+            "--book-id",
+            "kaiyuan_zhanjing",
+            "--query-mode",
+            "evidence",
+            "--literal-first",
+            "--show-raw",
+        ],
+    )
+    assert result.exit_code == 0
+    body = json.loads(result.stdout)
+    assert body["query_mode"] == "evidence"
+    assert body["exact_hits"][0]["id"] == "hit1"
+
+
 def test_inspect_fallback_stats_present_when_used(monkeypatch):
     def fake_two_stage(self, query, **kwargs):
         return {
