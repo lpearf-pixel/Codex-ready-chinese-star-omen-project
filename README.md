@@ -55,6 +55,15 @@ pip install -e .
 - `KB_OBSIDIAN_ROOT`
 - `KB_OBSIDIAN_INGEST_SOURCE_LABEL`
 - `KB_OBSIDIAN_SOURCE_ROOT_LABEL`
+
+当前 KB 源默认配置等价于：
+
+```bash
+KB_SOURCES_ROOT=./data/processed
+KB_ENABLE_OBSIDIAN_SOURCE=true
+KB_OBSIDIAN_ROOT="/Users/kandysmith/Library/Mobile Documents/iCloud~md~obsidian/Documents/pyh/_kb-ingest/docs"
+```
+
 - `APP_ENV`
 - `APP_DEBUG`
 - `APP_LOG_LEVEL`

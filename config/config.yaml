@@ -16,9 +16,9 @@ kb_search:
   query_t2s: ${KB_SEARCH_QUERY_T2S:-true}
 
 knowledge_base:
-  sources_root: ${KB_SOURCES_ROOT:-./data/sources}
+  sources_root: ${KB_SOURCES_ROOT:-./data/processed}
   enable_obsidian_source: ${KB_ENABLE_OBSIDIAN_SOURCE:-true}
-  obsidian_root: ${KB_OBSIDIAN_ROOT:-./data/obsidian}
+  obsidian_root: ${KB_OBSIDIAN_ROOT:-/Users/kandysmith/Library/Mobile Documents/iCloud~md~obsidian/Documents/pyh/_kb-ingest/docs}
   obsidian_ingest_source_label: ${KB_OBSIDIAN_INGEST_SOURCE_LABEL:-obsidian}
   obsidian_source_root_label: ${KB_OBSIDIAN_SOURCE_ROOT_LABEL:-kaiyuan_zhanjing}
 
