@@ -358,6 +358,9 @@ def test_scan_primary_files_compact_excerpt_exact_and_fenjuan_sort(tmp_path):
     )
 
     assert meta["files_scanned"] == 2
+    assert meta["matched_headings"] == [h["title"] for h in hits]
+    assert meta["matched_files"] == [h["path"] for h in hits]
+    assert meta["matched_quotes"] == [h["excerpt"] for h in hits]
     assert hits[0]["card_type"] == "fenjuan"
     assert hits[0]["match_type"] == "exact_phrase"
     assert hits[0]["match_offset"] is not None
@@ -366,6 +369,38 @@ def test_scan_primary_files_compact_excerpt_exact_and_fenjuan_sort(tmp_path):
     assert hits[0]["excerpt"] == hits[0]["snippet"]
     assert hits[0]["matched_variants"]
     assert hits[0]["score"] == 1.0
+
+
+def test_scan_primary_files_does_not_limit_before_late_fenjuan_exact(tmp_path):
+    from dataclasses import replace
+    from src.config.settings import get_settings
+
+    root = tmp_path / "docs"
+    book_root = root / "古籍" / "唐開元占經"
+    fulltext = book_root / "唐開元占經-全文合併版.md"
+    early_fenjuan = book_root / "分卷" / "KR3g0018_018.md"
+    target_fenjuan = book_root / "分卷" / "KR3g0018_031.md"
+    target_fenjuan.parent.mkdir(parents=True)
+    fulltext.write_text("# 唐開元占經 目錄\n" + "全文合併版載熒惑守心，但不應壓過分卷。", encoding="utf-8")
+    early_fenjuan.write_text("卷十八\n熒惑在天，久守其位，近心宿而占。", encoding="utf-8")
+    target_fenjuan.write_text("卷三十一\n前文。熒惑\n守　心，王者戒之。", encoding="utf-8")
+
+    settings = replace(get_settings(), kb_sources_root=str(root), kb_enable_obsidian_source=False)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k", settings=settings)
+    hits, meta = r._scan_primary_files(
+        "荧惑守心",
+        book_id="kaiyuan_zhanjing",
+        mode="evidence",
+        limit=1,
+        query_variants=["荧惑守心", "熒惑守心"],
+    )
+
+    assert [h["title"] for h in hits] == ["KR3g0018_031"]
+    assert meta["matched_headings"] == ["KR3g0018_031"]
+    assert meta["matched_files"] == [hits[0]["path"]]
+    assert hits[0]["match_type"] == "exact_phrase"
+    assert hits[0]["card_type"] == "fenjuan"
+    assert "熒惑" in hits[0]["snippet"] and "心" in hits[0]["snippet"]
 
 
 def test_scan_primary_files_loose_terms_are_lower_scored_candidates(tmp_path):

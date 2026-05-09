@@ -405,11 +405,13 @@ class KBSearchRetriever:
         return 0.0
 
     @staticmethod
-    def _fallback_sort_key(hit: dict[str, Any]) -> tuple[int, int, int, str]:
-        card_priority = {"fenjuan": 0, "fulltext": 1}.get(str(hit.get("card_type") or ""), 9)
+    def _fallback_sort_key(hit: dict[str, Any]) -> tuple[int, int, float, int, str]:
         match_priority = {"exact_phrase": 0, "heading": 1, "loose_terms": 2}.get(str(hit.get("match_type") or ""), 9)
+        card_priority = {"fenjuan": 0, "fulltext": 1}.get(str(hit.get("card_type") or ""), 9)
+        score = float(hit.get("score") or 0)
         offset = hit.get("match_offset")
-        return (card_priority, match_priority, int(offset) if isinstance(offset, int) else 10**12, str(hit.get("path") or ""))
+        offset_priority = int(offset) if isinstance(offset, int) else 10**12
+        return (match_priority, card_priority, -score, offset_priority, str(hit.get("path") or ""))
 
     @classmethod
     def _dedupe_fallback_hits(cls, hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -455,9 +457,6 @@ class KBSearchRetriever:
 
         hits: list[dict[str, Any]] = []
         files_scanned = 0
-        matched_files: list[str] = []
-        matched_headings: list[str] = []
-        matched_quotes: list[str] = []
         variants = self._expanded_query_variants(query_variants or [query])
         for root in roots:
             if not root.exists():
@@ -499,9 +498,6 @@ class KBSearchRetriever:
                 match_type = context["match_type"]
                 excerpt = context["excerpt"]
                 score = self._fallback_score(card_type, match_type)
-                matched_files.append(normalized)
-                matched_headings.append(heading)
-                matched_quotes.append(excerpt[:120].replace("\n", " "))
                 matched_file_debug = {
                     "path": normalized,
                     "heading": heading,
@@ -532,17 +528,21 @@ class KBSearchRetriever:
                     }
                 )
 
-        hits = self._dedupe_fallback_hits(hits)[:limit]
+        sorted_hits = sorted(hits, key=self._fallback_sort_key)
+        final_hits = self._dedupe_fallback_hits(sorted_hits)[:limit]
         meta_out = {
             "files_scanned": files_scanned,
-            "matched_files": matched_files[:limit],
-            "matched_headings": matched_headings[:limit],
-            "matched_quotes": matched_quotes[:limit],
+            "matched_files": [str(h.get("path") or "") for h in final_hits],
+            "matched_headings": [str(h.get("title") or "") for h in final_hits],
+            "matched_quotes": [str(h.get("excerpt") or h.get("snippet") or "") for h in final_hits],
         }
         if debug_enabled:
-            debug_scan["matched_files"] = sorted(debug_scan["matched_files"], key=lambda item: (0 if "/分卷/" in item["path"] else 1, item.get("match_offset") or 10**12))[:limit]
+            debug_scan["final_sorted_headings"] = [str(h.get("title") or "") for h in final_hits]
+            debug_scan["final_sorted_files"] = [str(h.get("path") or "") for h in final_hits]
+            debug_scan["final_sorted_match_types"] = [str(h.get("match_type") or "") for h in final_hits]
+            debug_scan["final_sorted_scores"] = [float(h.get("score") or 0) for h in final_hits]
             meta_out["debug_scan"] = debug_scan
-        return hits, meta_out
+        return final_hits, meta_out
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/v1/health", use_auth=False)
