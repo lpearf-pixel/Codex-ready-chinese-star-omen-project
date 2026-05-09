@@ -77,6 +77,8 @@ class Settings:
     kb_obsidian_root: str
     kb_obsidian_ingest_source_label: str
     kb_obsidian_source_root_label: str
+    kb_enable_candidate_overlay: bool
+    kb_candidate_overlay_root: str
 
     app_env: str
     app_debug: bool
@@ -180,6 +182,8 @@ def load_settings(config_path: Path | None = None) -> Settings:
         kb_obsidian_root=str(_env_or("KB_OBSIDIAN_ROOT", kb_cfg.get("obsidian_root"))),
         kb_obsidian_ingest_source_label=str(_env_or("KB_OBSIDIAN_INGEST_SOURCE_LABEL", kb_cfg.get("obsidian_ingest_source_label"))),
         kb_obsidian_source_root_label=str(_env_or("KB_OBSIDIAN_SOURCE_ROOT_LABEL", kb_cfg.get("obsidian_source_root_label"))),
+        kb_enable_candidate_overlay=_as_bool(_env_or("KB_ENABLE_CANDIDATE_OVERLAY", kb_cfg.get("enable_candidate_overlay", False))),
+        kb_candidate_overlay_root=str(_env_or("KB_CANDIDATE_OVERLAY_ROOT", kb_cfg.get("candidate_overlay_root", "data/generated_candidates"))),
         app_env=str(_env_or("APP_ENV", app.get("env"))),
         app_debug=_as_bool(_env_or("APP_DEBUG", app.get("debug"))),
         app_log_level=str(_env_or("APP_LOG_LEVEL", app.get("log_level"))),

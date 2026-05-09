@@ -21,6 +21,8 @@ knowledge_base:
   obsidian_root: ${KB_OBSIDIAN_ROOT:-/Users/kandysmith/Library/Mobile Documents/iCloud~md~obsidian/Documents/pyh/_kb-ingest/docs}
   obsidian_ingest_source_label: ${KB_OBSIDIAN_INGEST_SOURCE_LABEL:-obsidian}
   obsidian_source_root_label: ${KB_OBSIDIAN_SOURCE_ROOT_LABEL:-kaiyuan_zhanjing}
+  enable_candidate_overlay: ${KB_ENABLE_CANDIDATE_OVERLAY:-false}
+  candidate_overlay_root: ${KB_CANDIDATE_OVERLAY_ROOT:-data/generated_candidates}
 
 contract:
   enforce_primary_required: ${CONTRACT_ENFORCE_PRIMARY_REQUIRED:-true}

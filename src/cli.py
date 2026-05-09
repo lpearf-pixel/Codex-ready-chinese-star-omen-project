@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -541,6 +542,126 @@ def inspect_kb_impl(
     return {"mode": "noop", "message": "provide --query for kb-search or --root for local inspection"}
 
 
+
+def _safe_candidate_filename(candidate_id: str) -> str:
+    digest = hashlib.sha256(candidate_id.encode("utf-8")).hexdigest()[:16]
+    return f"candidate-{digest}.md"
+
+
+def _frontmatter_value(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _write_candidate_markdown(path: Path, frontmatter: dict[str, Any], body: str) -> None:
+    lines = ["---"]
+    for key, value in frontmatter.items():
+        lines.append(f"{key}: {_frontmatter_value(value)}")
+    lines.extend(["---", "", body.rstrip(), ""])
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def generate_candidate_card_impl(
+    query: str,
+    book_id: str,
+    out_dir: Path,
+    *,
+    limit: int | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    generated_root = Path("data/generated_candidates").resolve()
+    resolved_out_dir = out_dir.resolve()
+    if generated_root != resolved_out_dir and generated_root not in resolved_out_dir.parents:
+        raise ValueError("candidate cards must be written under data/generated_candidates")
+
+    settings = get_settings()
+    effective_limit = limit if limit is not None else settings.app_default_limit
+    retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
+    query_variants = retriever._query_variants(query)
+    hits, scan_meta = retriever._scan_primary_files(
+        query,
+        book_id=book_id,
+        mode="evidence",
+        limit=effective_limit,
+        query_variants=query_variants,
+    )
+    selected_hits = [h for h in hits if h.get("match_type") == "exact_phrase" and h.get("card_type") == "fenjuan"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = out_dir / "candidate_manifest.json"
+    existing: list[dict[str, Any]] = []
+    if manifest_path.exists():
+        loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, list):
+            existing = loaded
+        elif isinstance(loaded, dict) and isinstance(loaded.get("candidates"), list):
+            existing = loaded["candidates"]
+
+    by_id = {str(item.get("id")): item for item in existing if item.get("id")}
+    generated: list[dict[str, Any]] = []
+    for hit in selected_hits:
+        normalized_term = KBSearchRetriever._normalize_query(query)
+        source_volume = str(hit.get("title") or "")
+        source_locator = str(hit.get("source_locator") or source_volume or Path(str(hit.get("path") or "")).stem)
+        match_offset = hit.get("match_offset")
+        candidate_id = f"{book_id}:{normalized_term}:{source_locator}:{match_offset}"
+        anchor_text = str(hit.get("excerpt") or hit.get("snippet") or "")
+        content_hash = hashlib.sha256("\n".join([candidate_id, anchor_text]).encode("utf-8")).hexdigest()
+        heading_path = hit.get("heading_path") if isinstance(hit.get("heading_path"), list) else [source_volume]
+        frontmatter = {
+            "id": candidate_id,
+            "kb_book_id": book_id,
+            "book_title": hit.get("book_title") or "唐開元占經",
+            "card_type": "extract_card",
+            "evidence_level": "candidate",
+            "generated_status": "candidate",
+            "generated_by": "codex_ready_filesystem_fallback",
+            "review_status": "pending",
+            "source_namespace": "downstream_generated",
+            "term": query,
+            "aliases": query_variants,
+            "source_file": hit.get("path"),
+            "source_locator": source_locator,
+            "source_volume": source_volume,
+            "page_marker": None,
+            "heading_path": heading_path,
+            "paragraph_index": None,
+            "match_type": hit.get("match_type"),
+            "match_offset": match_offset,
+            "anchor_text": anchor_text,
+            "content_hash": content_hash,
+        }
+        body = f"# {query}\n\n> {anchor_text}\n\n候选证据卡由 downstream filesystem fallback 生成，等待人工 review 后再进入正式 KB ingest。"
+        filename = _safe_candidate_filename(candidate_id)
+        card_path = out_dir / filename
+        _write_candidate_markdown(card_path, frontmatter, body)
+        manifest_item = {
+            "id": candidate_id,
+            "path": str(card_path),
+            "kb_book_id": book_id,
+            "term": query,
+            "source_file": hit.get("path"),
+            "source_locator": source_locator,
+            "match_offset": match_offset,
+            "review_status": "pending",
+            "content_hash": content_hash,
+        }
+        by_id[candidate_id] = manifest_item
+        generated.append(manifest_item)
+
+    manifest = sorted(by_id.values(), key=lambda item: item["id"])
+    manifest_path.write_text(json.dumps({"candidates": manifest}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "mode": "generate_candidate_card",
+        "query": query,
+        "book_id": book_id,
+        "out_dir": str(out_dir),
+        "generated_count": len(generated),
+        "generated": generated,
+        "manifest_path": str(manifest_path),
+        "files_scanned": scan_meta.get("files_scanned", 0),
+        "matched_headings": scan_meta.get("matched_headings", []),
+    }
+
 def resolve_evidence_impl(rule: Path, kb_root: Path | None = None, strict: bool = False):
     settings = get_settings()
     rule_obj = _load_json(rule)
@@ -670,6 +791,19 @@ if typer:
                 "hint": "check KB_SEARCH_API_KEY and kb-search service",
             }
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+    @app.command("generate-candidate-card")
+    def generate_candidate_card(
+        query: str = typer.Option(..., "--query"),
+        book_id: str = typer.Option(..., "--book-id"),
+        out_dir: Path = typer.Option(..., "--out-dir"),
+        limit: int | None = typer.Option(None, "--limit"),
+        base_url: str | None = typer.Option(None, "--base-url"),
+        api_key: str | None = typer.Option(None, "--api-key"),
+    ):
+        out = generate_candidate_card_impl(query, book_id, out_dir, limit=limit, base_url=base_url, api_key=api_key)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
     @app.command("audit-rules")
@@ -1047,6 +1181,13 @@ def _main_fallback():  # pragma: no cover
     p_search.add_argument("--literal-pool-factor", type=int, default=None)
     p_search.add_argument("--base-url")
     p_search.add_argument("--api-key")
+    p_candidate = sub.add_parser("generate-candidate-card")
+    p_candidate.add_argument("--query", required=True)
+    p_candidate.add_argument("--book-id", required=True)
+    p_candidate.add_argument("--out-dir", required=True)
+    p_candidate.add_argument("--limit", type=int, default=None)
+    p_candidate.add_argument("--base-url")
+    p_candidate.add_argument("--api-key")
     p_detect.add_argument("--datetime", required=True)
     p_detect.add_argument("--lon", type=float, required=True)
     p_detect.add_argument("--lat", type=float, required=True)
@@ -1214,6 +1355,16 @@ def _main_fallback():  # pragma: no cover
             )
         except Exception as exc:
             out = {"mode": "search", "query": args.query, "error": str(exc), "hint": "check KB_SEARCH_API_KEY and kb-search service"}
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "generate-candidate-card":
+        out = generate_candidate_card_impl(
+            args.query,
+            args.book_id,
+            Path(args.out_dir),
+            limit=args.limit,
+            base_url=args.base_url,
+            api_key=args.api_key,
+        )
         print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "detect-and-match":
         out = run_detect_and_match_pipeline(

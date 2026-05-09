@@ -425,3 +425,82 @@ def test_scan_primary_files_loose_terms_are_lower_scored_candidates(tmp_path):
     assert hits[0]["match_type"] == "loose_terms"
     assert hits[0]["score"] == 0.55
     assert "熒惑" in hits[0]["excerpt"]
+
+
+def test_candidate_overlay_default_disabled(monkeypatch, tmp_path):
+    from dataclasses import replace
+    from src.config.settings import get_settings
+
+    overlay_root = tmp_path / "generated_candidates"
+    overlay_root.mkdir()
+    (overlay_root / "candidate.md").write_text(
+        "---\n"
+        "kb_book_id: \"kaiyuan_zhanjing\"\n"
+        "card_type: \"extract_card\"\n"
+        "source_namespace: \"downstream_generated\"\n"
+        "review_status: \"pending\"\n"
+        "term: \"荧惑守心\"\n"
+        "aliases: [\"荧惑守心\", \"熒惑守心\"]\n"
+        "anchor_text: \"熒惑守心\"\n"
+        "match_type: \"exact_phrase\"\n"
+        "match_offset: 1\n"
+        "---\n候选\n",
+        encoding="utf-8",
+    )
+    settings = replace(
+        get_settings(),
+        kb_enable_candidate_overlay=False,
+        kb_candidate_overlay_root=str(overlay_root),
+        kb_sources_root=str(tmp_path / "empty"),
+        kb_enable_obsidian_source=False,
+    )
+    monkeypatch.setattr(KBSearchRetriever, "_request", lambda self, method, path, **kwargs: {"hits": []})
+    monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", lambda self, query, **kwargs: ([], {"files_scanned": 0, "matched_files": [], "matched_headings": [], "matched_quotes": []}))
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k", settings=settings)
+    out = r.two_stage_retrieve("荧惑守心", filters={"kb_book_id": "kaiyuan_zhanjing"}, query_mode="evidence")
+    assert out["stage2"]["primary_candidates"] == []
+
+
+def test_candidate_overlay_enabled_pending_candidate_is_not_exact(monkeypatch, tmp_path):
+    from dataclasses import replace
+    from src.config.settings import get_settings
+
+    overlay_root = tmp_path / "generated_candidates"
+    overlay_root.mkdir()
+    (overlay_root / "candidate.md").write_text(
+        "---\n"
+        "id: \"kaiyuan_zhanjing:熒惑守心:KR3g0018_031:12345\"\n"
+        "kb_book_id: \"kaiyuan_zhanjing\"\n"
+        "book_title: \"唐開元占經\"\n"
+        "card_type: \"extract_card\"\n"
+        "evidence_level: \"candidate\"\n"
+        "generated_status: \"candidate\"\n"
+        "source_namespace: \"downstream_generated\"\n"
+        "review_status: \"pending\"\n"
+        "term: \"荧惑守心\"\n"
+        "aliases: [\"荧惑守心\", \"熒惑守心\"]\n"
+        "source_file: \"/kb/docs/古籍/唐開元占經/分卷/KR3g0018_031.md\"\n"
+        "source_locator: \"KR3g0018_031\"\n"
+        "source_volume: \"KR3g0018_031\"\n"
+        "heading_path: [\"KR3g0018_031\"]\n"
+        "anchor_text: \"卷三十一……熒惑守心……\"\n"
+        "match_type: \"exact_phrase\"\n"
+        "match_offset: 12345\n"
+        "content_hash: \"abc\"\n"
+        "---\n候选\n",
+        encoding="utf-8",
+    )
+    settings = replace(
+        get_settings(),
+        kb_enable_candidate_overlay=True,
+        kb_candidate_overlay_root=str(overlay_root),
+        kb_sources_root=str(tmp_path / "empty"),
+        kb_enable_obsidian_source=False,
+    )
+    monkeypatch.setattr(KBSearchRetriever, "_request", lambda self, method, path, **kwargs: {"hits": []})
+    monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", lambda self, query, **kwargs: ([], {"files_scanned": 0, "matched_files": [], "matched_headings": [], "matched_quotes": []}))
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k", settings=settings)
+    out = r.two_stage_retrieve("荧惑守心", filters={"kb_book_id": "kaiyuan_zhanjing"}, query_mode="evidence")
+    assert out["stage2"]["primary_candidates"][0]["source_namespace"] == "downstream_generated"
+    assert out["stage2"]["primary_candidates"][0]["review_status"] == "pending"
+    assert out["stage2"]["exact_hits"] == []

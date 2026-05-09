@@ -434,6 +434,102 @@ class KBSearchRetriever:
             deduped.append(hit)
         return deduped
 
+    @staticmethod
+    def _parse_candidate_card(path: Path) -> tuple[dict[str, Any], str] | None:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception:
+            return None
+        if not text.startswith("---\n"):
+            return None
+        end = text.find("\n---", 4)
+        if end < 0:
+            return None
+        raw_frontmatter = text[4:end]
+        body = text[end + 4 :].lstrip("\n")
+        meta: dict[str, Any] = {}
+        for raw_line in raw_frontmatter.splitlines():
+            if not raw_line.strip() or raw_line.lstrip().startswith("#") or ":" not in raw_line:
+                continue
+            key, value = raw_line.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            if value in {"", "null", "None"}:
+                meta[key] = None
+                continue
+            try:
+                meta[key] = json.loads(value)
+            except json.JSONDecodeError:
+                meta[key] = value.strip('"\'')
+        return meta, body
+
+    def _scan_candidate_overlay(
+        self,
+        query: str,
+        *,
+        book_id: str | None,
+        limit: int,
+        query_variants: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        root = Path(self.settings.kb_candidate_overlay_root)
+        if not root.exists():
+            return []
+        variants = self._expanded_query_variants(query_variants or [query])
+        hits: list[dict[str, Any]] = []
+        for path in root.rglob("*.md"):
+            parsed = self._parse_candidate_card(path)
+            if not parsed:
+                continue
+            meta, body = parsed
+            if meta.get("source_namespace") != "downstream_generated":
+                continue
+            if meta.get("card_type") != "extract_card":
+                continue
+            if book_id and meta.get("kb_book_id") != book_id:
+                continue
+            searchable = "\n".join(str(meta.get(key) or "") for key in ("term", "anchor_text", "source_locator"))
+            aliases = meta.get("aliases") if isinstance(meta.get("aliases"), list) else []
+            searchable = "\n".join([searchable, "\n".join(str(a) for a in aliases), body])
+            context = self._find_query_context(searchable, variants, heading=str(meta.get("source_locator") or path.stem))
+            if not context["matched"]:
+                continue
+            review_status = str(meta.get("review_status") or "pending")
+            source_file = str(meta.get("source_file") or "")
+            title = str(meta.get("source_volume") or meta.get("source_locator") or path.stem)
+            excerpt = str(meta.get("anchor_text") or context.get("excerpt") or "")
+            match_type = str(meta.get("match_type") or context.get("match_type") or "exact_phrase")
+            score = self._fallback_score("fenjuan", match_type) * (0.75 if review_status == "pending" else 1.0)
+            hits.append(
+                {
+                    "chunk_id": f"candidate:{meta.get('id') or path.stem}",
+                    "score": score,
+                    "path": str(path).replace("\\", "/"),
+                    "source_file": source_file,
+                    "snippet": excerpt[:300],
+                    "excerpt": excerpt,
+                    "matched_variants": context.get("matched_variants") or meta.get("aliases") or [],
+                    "match_offset": meta.get("match_offset"),
+                    "match_type": match_type,
+                    "source_type": "candidate_overlay",
+                    "source_namespace": "downstream_generated",
+                    "generated_status": meta.get("generated_status"),
+                    "review_status": review_status,
+                    "title": title,
+                    "book_title": meta.get("book_title"),
+                    "kb_book_id": meta.get("kb_book_id"),
+                    "book_id": meta.get("kb_book_id"),
+                    "card_type": "extract_card",
+                    "evidence_level": meta.get("evidence_level") or "candidate",
+                    "source_locator": meta.get("source_locator"),
+                    "volume": meta.get("source_volume"),
+                    "heading_path": meta.get("heading_path") if isinstance(meta.get("heading_path"), list) else [title],
+                    "anchor_text": meta.get("anchor_text"),
+                    "paragraph_index": meta.get("paragraph_index"),
+                    "content_hash": meta.get("content_hash"),
+                }
+            )
+        return sorted(hits, key=self._fallback_sort_key)[:limit]
+
     def _scan_primary_files(self, query: str, *, book_id: str | None, mode: str, limit: int = 3, query_variants: list[str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         roots = [Path(self.settings.kb_sources_root)]
         if self.settings.kb_enable_obsidian_source:
@@ -705,6 +801,11 @@ class KBSearchRetriever:
 
         book_id = (filters.get("kb_book_id") or filters.get("book_id")) if filters else None
         scan_limit = effective_top_k if effective_top_k is not None else 3
+        overlay_candidates = (
+            self._scan_candidate_overlay(query, book_id=book_id, limit=scan_limit, query_variants=query_variants)
+            if self.settings.kb_enable_candidate_overlay
+            else []
+        )
         primary_candidates, scan_stats = self._scan_primary_files(
             structured_seed,
             book_id=book_id,
@@ -712,9 +813,18 @@ class KBSearchRetriever:
             limit=scan_limit,
             query_variants=query_variants,
         )
+        for hit in overlay_candidates:
+            if hit not in primary_candidates:
+                primary_candidates.append(hit)
+        primary_candidates = self._dedupe_fallback_hits(primary_candidates)[:scan_limit]
         fallback_used = False
 
-        stage2_exact = [h for h in primary_candidates if h.get("match_type") == "exact_phrase"][:scan_limit]
+        def _eligible_exact(hit: dict[str, Any]) -> bool:
+            return hit.get("match_type") == "exact_phrase" and not (
+                hit.get("source_namespace") == "downstream_generated" and hit.get("review_status") == "pending"
+            )
+
+        stage2_exact = [h for h in primary_candidates if _eligible_exact(h)][:scan_limit]
         if mode == "evidence" and not stage2_exact:
             fallback_used = True
             fallback_candidates, fallback_scan_stats = self._scan_primary_files(
@@ -734,9 +844,19 @@ class KBSearchRetriever:
                 if hit not in primary_candidates:
                     primary_candidates.append(hit)
             primary_candidates = self._dedupe_fallback_hits(primary_candidates)[:scan_limit]
-            stage2_exact = [h for h in primary_candidates if h.get("match_type") == "exact_phrase"][:scan_limit]
-        primary_candidates = self._dedupe_fallback_hits([h for h in primary_candidates if h.get("card_type") in self.PRIMARY_CARD_TYPES])[:scan_limit]
-        stage2_exact = [h for h in stage2_exact if h.get("card_type") in self.PRIMARY_CARD_TYPES and h.get("match_type") == "exact_phrase"][:scan_limit]
+            for hit in overlay_candidates:
+                if hit not in primary_candidates:
+                    primary_candidates.append(hit)
+            primary_candidates = self._dedupe_fallback_hits(primary_candidates)[:scan_limit]
+            stage2_exact = [h for h in primary_candidates if _eligible_exact(h)][:scan_limit]
+        primary_candidates = self._dedupe_fallback_hits([
+            h for h in primary_candidates
+            if h.get("card_type") in self.PRIMARY_CARD_TYPES or h.get("source_namespace") == "downstream_generated"
+        ])[:scan_limit]
+        stage2_exact = [
+            h for h in stage2_exact
+            if (h.get("card_type") in self.PRIMARY_CARD_TYPES or h.get("source_namespace") == "downstream_generated") and _eligible_exact(h)
+        ][:scan_limit]
         stage2_related = [h for h in primary_candidates if h not in stage2_exact][:scan_limit]
         structured_fallbacks = []
         if mode == "support":
