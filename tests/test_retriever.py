@@ -45,6 +45,7 @@ def test_retrieve_request_payload(monkeypatch):
     assert captured["use_auth"] is True
     assert captured["payload"]["query"] == "荧惑"
     assert captured["payload"]["top_k"] == 5
+    assert captured["payload"]["limit"] == 5
     assert captured["payload"]["filters"]["kb_book_id"] == "kaiyuan_zhanjing"
     assert captured["payload"]["query_mode"] == "knowledge"
     assert captured["payload"]["literal_first"] is False
@@ -332,3 +333,60 @@ def test_min_retrieval_eval_set_literal_first_defaults(monkeypatch):
     for row, payload in zip(rows, captured_payloads):
         assert payload["query_mode"] == row["expected_query_mode"]
         assert payload["literal_first"] == row["expected_literal_first"]
+
+
+def test_scan_primary_files_compact_excerpt_exact_and_fenjuan_sort(tmp_path):
+    from dataclasses import replace
+    from src.config.settings import get_settings
+
+    root = tmp_path / "docs"
+    fenjuan = root / "古籍" / "唐開元占經" / "分卷" / "KR3g0018_031.md"
+    fulltext = root / "古籍" / "唐開元占經" / "唐開元占經-全文合併版.md"
+    fenjuan.parent.mkdir(parents=True)
+    fulltext.parent.mkdir(parents=True, exist_ok=True)
+    fenjuan.write_text("文件開頭不應作為摘要。\n" + ("前置內容。" * 120) + "卷三十一\n熒惑　\n 守\n心，為大占。後文。", encoding="utf-8")
+    fulltext.write_text("# 唐開元占經 目錄\n議語\n" * 20 + "全文亦載熒惑守心。", encoding="utf-8")
+
+    settings = replace(get_settings(), kb_sources_root=str(root), kb_enable_obsidian_source=False)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k", settings=settings)
+    hits, meta = r._scan_primary_files(
+        "荧惑守心",
+        book_id="kaiyuan_zhanjing",
+        mode="evidence",
+        limit=8,
+        query_variants=["荧惑守心", "熒惑守心", "荧惑 守心", "熒惑 守心"],
+    )
+
+    assert meta["files_scanned"] == 2
+    assert hits[0]["card_type"] == "fenjuan"
+    assert hits[0]["match_type"] == "exact_phrase"
+    assert hits[0]["match_offset"] is not None
+    assert "熒惑" in hits[0]["snippet"] and "心" in hits[0]["snippet"]
+    assert "文件開頭不應作為摘要" not in hits[0]["snippet"]
+    assert hits[0]["excerpt"] == hits[0]["snippet"]
+    assert hits[0]["matched_variants"]
+    assert hits[0]["score"] == 1.0
+
+
+def test_scan_primary_files_loose_terms_are_lower_scored_candidates(tmp_path):
+    from dataclasses import replace
+    from src.config.settings import get_settings
+
+    root = tmp_path / "docs"
+    fenjuan = root / "古籍" / "唐開元占經" / "分卷" / "KR3g0018_005.md"
+    fenjuan.parent.mkdir(parents=True)
+    fenjuan.write_text("卷五\n熒惑在天，久守其位，近心宿而占。", encoding="utf-8")
+
+    settings = replace(get_settings(), kb_sources_root=str(root), kb_enable_obsidian_source=False)
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k", settings=settings)
+    hits, _ = r._scan_primary_files(
+        "荧惑守心",
+        book_id="kaiyuan_zhanjing",
+        mode="evidence",
+        limit=8,
+        query_variants=["荧惑守心", "熒惑守心"],
+    )
+
+    assert hits[0]["match_type"] == "loose_terms"
+    assert hits[0]["score"] == 0.55
+    assert "熒惑" in hits[0]["excerpt"]

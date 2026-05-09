@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -249,76 +250,299 @@ class KBSearchRetriever:
             out = [h for h in out if h.get("evidence_level") == evidence_level]
         return out
 
+    @staticmethod
+    def _compact_with_index_map(text: str) -> tuple[str, list[int]]:
+        compact_chars: list[str] = []
+        index_map: list[int] = []
+        for idx, ch in enumerate(text):
+            if ch.isspace():
+                continue
+            compact_chars.append(ch)
+            index_map.append(idx)
+        return "".join(compact_chars), index_map
+
+    @classmethod
+    def _compact_text(cls, text: str) -> str:
+        return "".join(ch for ch in text if not ch.isspace())
+
+    @classmethod
+    def _expanded_query_variants(cls, query_variants: list[str]) -> list[str]:
+        expanded: list[str] = []
+        for variant in query_variants:
+            compact = cls._compact_text(str(variant))
+            if not compact:
+                continue
+            simp = compact.translate(cls.SIMPLIFIED_MAP)
+            trad = compact.translate(cls.TRADITIONAL_MAP)
+            candidates = [compact, simp, trad]
+            for candidate in (compact, simp, trad):
+                if len(candidate) > 2:
+                    candidates.append(f"{candidate[:2]} {candidate[2:]}")
+            for candidate in candidates:
+                if candidate and candidate not in expanded:
+                    expanded.append(candidate)
+        return expanded
+
+    @classmethod
+    def _loose_term_groups(cls, query_variants: list[str]) -> list[list[str]]:
+        groups: list[list[str]] = []
+        for variant in cls._expanded_query_variants(query_variants):
+            compact = cls._compact_text(variant)
+            if not compact:
+                continue
+            fire_terms = [term for term in ("荧惑", "熒惑") if term in compact]
+            if fire_terms and "心" in compact:
+                for fire_term in fire_terms:
+                    candidates = [[fire_term, "心"]]
+                    if "守" in compact:
+                        candidates.append([fire_term, "守", "心"])
+                    for group in candidates:
+                        if group not in groups:
+                            groups.append(group)
+                continue
+            if len(compact) >= 3:
+                chars = list(dict.fromkeys(compact))
+                if 1 < len(chars) <= 6 and chars not in groups:
+                    groups.append(chars)
+        return groups
+
+    @classmethod
+    def _excerpt_around_offset(cls, text: str, offset: int | None, window: int) -> str:
+        if offset is None:
+            return ""
+        start = max(0, offset - window)
+        end = min(len(text), offset + window)
+        return text[start:end].strip()
+
+    @classmethod
+    def _find_query_context(
+        cls,
+        text: str,
+        query_variants: list[str],
+        *,
+        window: int = 160,
+        loose_window: int = 500,
+        heading: str | None = None,
+    ) -> dict[str, Any]:
+        compact_text, index_map = cls._compact_with_index_map(text)
+        variants = cls._expanded_query_variants(query_variants)
+        compact_variants = [cls._compact_text(v) for v in variants if cls._compact_text(v)]
+
+        matched_variants: list[str] = []
+        best_compact_offset: int | None = None
+        for variant in compact_variants:
+            pos = compact_text.find(variant)
+            if pos < 0:
+                continue
+            if variant not in matched_variants:
+                matched_variants.append(variant)
+            if best_compact_offset is None or pos < best_compact_offset:
+                best_compact_offset = pos
+
+        if best_compact_offset is not None:
+            original_offset = index_map[best_compact_offset] if best_compact_offset < len(index_map) else None
+            excerpt = cls._excerpt_around_offset(text, original_offset, window)
+            return {
+                "matched": True,
+                "excerpt": excerpt,
+                "matched_variants": matched_variants,
+                "match_offset": original_offset,
+                "match_type": "exact_phrase",
+            }
+
+        compact_heading = cls._compact_text(heading or "")
+        heading_matches = [variant for variant in compact_variants if variant and variant in compact_heading]
+        if heading_matches:
+            return {
+                "matched": True,
+                "excerpt": text[: min(len(text), window * 2)].strip(),
+                "matched_variants": heading_matches,
+                "match_offset": None,
+                "match_type": "heading",
+            }
+
+        for group in cls._loose_term_groups(query_variants):
+            positions: list[tuple[int, str]] = []
+            for term in group:
+                compact_term = cls._compact_text(term)
+                pos = compact_text.find(compact_term)
+                if pos < 0:
+                    positions = []
+                    break
+                positions.append((pos, compact_term))
+            if not positions:
+                continue
+            min_pos = min(pos for pos, _ in positions)
+            max_pos = max(pos + len(term) for pos, term in positions)
+            if max_pos - min_pos > loose_window:
+                continue
+            original_offset = index_map[min_pos] if min_pos < len(index_map) else None
+            excerpt = cls._excerpt_around_offset(text, original_offset, window)
+            return {
+                "matched": True,
+                "excerpt": excerpt,
+                "matched_variants": group,
+                "match_offset": original_offset,
+                "match_type": "loose_terms",
+            }
+
+        return {
+            "matched": False,
+            "excerpt": "",
+            "matched_variants": [],
+            "match_offset": None,
+            "match_type": "none",
+        }
+
+    @staticmethod
+    def _fallback_score(card_type: str | None, match_type: str | None) -> float:
+        if match_type == "exact_phrase":
+            return 1.0 if card_type == "fenjuan" else 0.85
+        if match_type == "heading":
+            return 0.65 if card_type == "fenjuan" else 0.50
+        if match_type == "loose_terms":
+            return 0.55 if card_type == "fenjuan" else 0.40
+        return 0.0
+
+    @staticmethod
+    def _fallback_sort_key(hit: dict[str, Any]) -> tuple[int, int, int, str]:
+        card_priority = {"fenjuan": 0, "fulltext": 1}.get(str(hit.get("card_type") or ""), 9)
+        match_priority = {"exact_phrase": 0, "heading": 1, "loose_terms": 2}.get(str(hit.get("match_type") or ""), 9)
+        offset = hit.get("match_offset")
+        return (card_priority, match_priority, int(offset) if isinstance(offset, int) else 10**12, str(hit.get("path") or ""))
+
+    @classmethod
+    def _dedupe_fallback_hits(cls, hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        ordered = sorted(hits, key=cls._fallback_sort_key)
+        deduped: list[dict[str, Any]] = []
+        seen_paths: set[str] = set()
+        seen_match_keys: set[tuple[str, str, str]] = set()
+        for hit in ordered:
+            path = str(hit.get("path") or "")
+            if path in seen_paths:
+                continue
+            matched_variants = hit.get("matched_variants") or []
+            variant_key = str(matched_variants[0]) if matched_variants else ""
+            excerpt_key = cls._compact_text(str(hit.get("excerpt") or ""))[:120]
+            match_key = (str(hit.get("kb_book_id") or hit.get("book_id") or ""), variant_key, excerpt_key)
+            if hit.get("card_type") == "fulltext" and match_key in seen_match_keys:
+                continue
+            seen_paths.add(path)
+            seen_match_keys.add(match_key)
+            deduped.append(hit)
+        return deduped
+
     def _scan_primary_files(self, query: str, *, book_id: str | None, mode: str, limit: int = 3, query_variants: list[str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         roots = [Path(self.settings.kb_sources_root)]
         if self.settings.kb_enable_obsidian_source:
             roots.append(Path(self.settings.kb_obsidian_root))
+
+        debug_enabled = os.environ.get("KB_DEBUG_SCAN") == "1"
+        debug_scan: dict[str, Any] = {
+            "roots": [str(root) for root in roots],
+            "root_exists": {str(root): root.exists() for root in roots},
+            "md_files_seen": 0,
+            "path_candidates": 0,
+            "files_scanned": 0,
+            "skipped_by_path_rule": 0,
+            "skipped_by_card_type": [],
+            "skipped_by_book_id": [],
+            "read_errors": [],
+            "text_checked": 0,
+            "matched_files": [],
+            "unmatched_files_sample": [],
+        }
 
         hits: list[dict[str, Any]] = []
         files_scanned = 0
         matched_files: list[str] = []
         matched_headings: list[str] = []
         matched_quotes: list[str] = []
-        variants = query_variants or [query]
-        normalized_variants = [v.replace(" ", "") for v in variants]
+        variants = self._expanded_query_variants(query_variants or [query])
         for root in roots:
             if not root.exists():
                 continue
             for path in root.rglob("*.md"):
+                debug_scan["md_files_seen"] += 1
                 normalized = str(path).replace("\\", "/")
                 if "/分卷/" not in normalized and "全文合併版" not in normalized and "全文合并版" not in normalized:
+                    debug_scan["skipped_by_path_rule"] += 1
                     continue
-                files_scanned += 1
+                debug_scan["path_candidates"] += 1
                 meta = infer_metadata_from_path(normalized)
-                if meta.get("card_type") not in {"fenjuan", "fulltext"}:
+                card_type = meta.get("card_type")
+                if card_type not in self.PRIMARY_CARD_TYPES:
+                    if debug_enabled:
+                        debug_scan["skipped_by_card_type"].append({"path": normalized, "card_type": card_type})
                     continue
                 if book_id and (meta.get("kb_book_id") or meta.get("book_id")) != book_id:
+                    if debug_enabled:
+                        debug_scan["skipped_by_book_id"].append({"path": normalized, "kb_book_id": meta.get("kb_book_id") or meta.get("book_id")})
                     continue
+                files_scanned += 1
+                debug_scan["files_scanned"] = files_scanned
                 try:
                     text = path.read_text(encoding="utf-8")
-                except Exception:
+                except Exception as exc:
+                    if debug_enabled:
+                        debug_scan["read_errors"].append({"path": normalized, "error": str(exc)})
                     continue
 
+                debug_scan["text_checked"] += 1
                 heading = self._basename(normalized)
-                compact_text = text.replace(" ", "")
-                if mode == "evidence":
-                    matched = any(v in compact_text for v in normalized_variants) or any(v in heading for v in normalized_variants)
-                else:
-                    matched = any(v in compact_text for v in normalized_variants) or any(v == heading for v in normalized_variants)
-                if not matched:
+                context = self._find_query_context(text, variants, heading=heading)
+                if not context["matched"]:
+                    if debug_enabled and len(debug_scan["unmatched_files_sample"]) < 10:
+                        debug_scan["unmatched_files_sample"].append(normalized)
                     continue
+
+                match_type = context["match_type"]
+                excerpt = context["excerpt"]
+                score = self._fallback_score(card_type, match_type)
                 matched_files.append(normalized)
                 matched_headings.append(heading)
-                quote = text[:120].replace("\n", " ")
-                matched_quotes.append(quote)
+                matched_quotes.append(excerpt[:120].replace("\n", " "))
+                matched_file_debug = {
+                    "path": normalized,
+                    "heading": heading,
+                    "matched_variants": context["matched_variants"],
+                    "match_type": match_type,
+                    "match_offset": context["match_offset"],
+                    "excerpt": excerpt,
+                }
+                if debug_enabled:
+                    debug_scan["matched_files"].append(matched_file_debug)
                 hits.append(
                     {
-                        "chunk_id": f"fallback:{path.name}",
-                        "score": 1.0,
+                        "chunk_id": f"fallback:{path.name}:{context['match_offset']}",
+                        "score": score,
                         "path": normalized,
-                        "snippet": text[:200],
+                        "snippet": excerpt[:300],
+                        "excerpt": excerpt,
+                        "matched_variants": context["matched_variants"],
+                        "match_offset": context["match_offset"],
+                        "match_type": match_type,
                         "source_type": "docs",
-                        "title": self._basename(normalized),
+                        "title": heading,
                         "book_title": meta.get("book_title"),
                         "kb_book_id": meta.get("kb_book_id") or meta.get("book_id"),
                         "book_id": meta.get("kb_book_id") or meta.get("book_id"),
-                        "card_type": meta.get("card_type"),
+                        "card_type": card_type,
                         "evidence_level": meta.get("evidence_level"),
                     }
                 )
-                if len(hits) >= limit:
-                    return hits, {
-                        "files_scanned": files_scanned,
-                        "matched_files": matched_files[:limit],
-                        "matched_headings": matched_headings[:limit],
-                        "matched_quotes": matched_quotes[:limit],
-                    }
-        return hits, {
+
+        hits = self._dedupe_fallback_hits(hits)[:limit]
+        meta_out = {
             "files_scanned": files_scanned,
             "matched_files": matched_files[:limit],
             "matched_headings": matched_headings[:limit],
             "matched_quotes": matched_quotes[:limit],
         }
+        if debug_enabled:
+            debug_scan["matched_files"] = sorted(debug_scan["matched_files"], key=lambda item: (0 if "/分卷/" in item["path"] else 1, item.get("match_offset") or 10**12))[:limit]
+            meta_out["debug_scan"] = debug_scan
+        return hits, meta_out
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/v1/health", use_auth=False)
@@ -333,7 +557,9 @@ class KBSearchRetriever:
         query_mode: str | None = None,
         literal_first: bool | None = None,
         literal_pool_factor: int | None = None,
+        limit: int | None = None,
     ) -> dict[str, Any]:
+        effective_top_k = top_k if top_k is not None else limit
         effective_query_mode = query_mode or self._query_mode(query)
         effective_literal_first = literal_first
         if effective_literal_first is None:
@@ -341,7 +567,8 @@ class KBSearchRetriever:
         retrieval_pool = self.RETRIEVAL_POOL_SPEC.get(effective_query_mode, self.RETRIEVAL_POOL_SPEC["knowledge"])
         payload: dict[str, Any] = {
             "query": query,
-            "top_k": top_k if top_k is not None else self.default_limit,
+            "top_k": effective_top_k if effective_top_k is not None else self.default_limit,
+            "limit": effective_top_k if effective_top_k is not None else self.default_limit,
             "collection": collection or self.default_collection,
             "query_mode": effective_query_mode,
             "literal_first": effective_literal_first,
@@ -421,10 +648,13 @@ class KBSearchRetriever:
         query_mode: str | None = None,
         literal_first: bool | None = None,
         literal_pool_factor: int | None = None,
+        limit: int | None = None,
     ) -> dict[str, Any]:
+        effective_top_k = top_k if top_k is not None else limit
         return self.retrieve(
             query,
-            top_k=top_k,
+            top_k=effective_top_k,
+            limit=effective_top_k,
             collection=collection,
             filters=filters,
             query_mode=query_mode,
@@ -442,7 +672,9 @@ class KBSearchRetriever:
         query_mode: str | None = None,
         literal_first: bool | None = None,
         literal_pool_factor: int | None = None,
+        limit: int | None = None,
     ) -> dict[str, Any]:
+        effective_top_k = top_k if top_k is not None else limit
         effective_query_mode = query_mode or self._query_mode(query)
         stage1_card_types = [
             "xingguan_card",
@@ -455,7 +687,8 @@ class KBSearchRetriever:
         stage1_filters = {**(filters or {}), "card_type": stage1_card_types}
         stage1 = self.retrieve(
             query,
-            top_k=top_k,
+            top_k=effective_top_k,
+            limit=effective_top_k,
             collection=collection,
             filters=stage1_filters,
             query_mode=effective_query_mode,
@@ -471,45 +704,40 @@ class KBSearchRetriever:
             structured_seed = str(top_structured.get("title") or self._basename(top_structured.get("path")) or query)
 
         book_id = (filters.get("kb_book_id") or filters.get("book_id")) if filters else None
+        scan_limit = effective_top_k if effective_top_k is not None else 3
         primary_candidates, scan_stats = self._scan_primary_files(
             structured_seed,
             book_id=book_id,
             mode=self._query_mode(structured_seed),
-            limit=3,
+            limit=scan_limit,
             query_variants=query_variants,
         )
         fallback_used = False
 
-        stage2_exact = [
-            h for h in primary_candidates
-            if any(v.replace(" ", "") in str(h.get("snippet") or "").replace(" ", "") for v in query_variants)
-            or any(v.replace(" ", "") in str(h.get("title") or "").replace(" ", "") for v in query_variants)
-        ][:3]
+        stage2_exact = [h for h in primary_candidates if h.get("match_type") == "exact_phrase"][:scan_limit]
         if mode == "evidence" and not stage2_exact:
             fallback_used = True
             fallback_candidates, fallback_scan_stats = self._scan_primary_files(
                 query,
                 book_id=book_id,
                 mode=mode,
-                limit=3,
+                limit=scan_limit,
                 query_variants=query_variants,
             )
             scan_stats["files_scanned"] += fallback_scan_stats.get("files_scanned", 0)
-            scan_stats["matched_files"] = list(dict.fromkeys(scan_stats.get("matched_files", []) + fallback_scan_stats.get("matched_files", [])))[:3]
-            scan_stats["matched_headings"] = list(dict.fromkeys(scan_stats.get("matched_headings", []) + fallback_scan_stats.get("matched_headings", [])))[:3]
-            scan_stats["matched_quotes"] = list(dict.fromkeys(scan_stats.get("matched_quotes", []) + fallback_scan_stats.get("matched_quotes", [])))[:3]
+            scan_stats["matched_files"] = list(dict.fromkeys(scan_stats.get("matched_files", []) + fallback_scan_stats.get("matched_files", [])))[:scan_limit]
+            scan_stats["matched_headings"] = list(dict.fromkeys(scan_stats.get("matched_headings", []) + fallback_scan_stats.get("matched_headings", [])))[:scan_limit]
+            scan_stats["matched_quotes"] = list(dict.fromkeys(scan_stats.get("matched_quotes", []) + fallback_scan_stats.get("matched_quotes", [])))[:scan_limit]
+            if "debug_scan" in fallback_scan_stats:
+                scan_stats["debug_scan"] = fallback_scan_stats["debug_scan"]
             for hit in fallback_candidates:
                 if hit not in primary_candidates:
                     primary_candidates.append(hit)
-            primary_candidates = primary_candidates[:3]
-            stage2_exact = [
-                h for h in primary_candidates
-                if any(v.replace(" ", "") in str(h.get("snippet") or "").replace(" ", "") for v in query_variants)
-                or any(v.replace(" ", "") in str(h.get("title") or "").replace(" ", "") for v in query_variants)
-            ][:3]
-        primary_candidates = [h for h in primary_candidates if h.get("card_type") in self.PRIMARY_CARD_TYPES][:3]
-        stage2_exact = [h for h in stage2_exact if h.get("card_type") in self.PRIMARY_CARD_TYPES][:3]
-        stage2_related = [h for h in primary_candidates if h not in stage2_exact][:3]
+            primary_candidates = self._dedupe_fallback_hits(primary_candidates)[:scan_limit]
+            stage2_exact = [h for h in primary_candidates if h.get("match_type") == "exact_phrase"][:scan_limit]
+        primary_candidates = self._dedupe_fallback_hits([h for h in primary_candidates if h.get("card_type") in self.PRIMARY_CARD_TYPES])[:scan_limit]
+        stage2_exact = [h for h in stage2_exact if h.get("card_type") in self.PRIMARY_CARD_TYPES and h.get("match_type") == "exact_phrase"][:scan_limit]
+        stage2_related = [h for h in primary_candidates if h not in stage2_exact][:scan_limit]
         structured_fallbacks = []
         if mode == "support":
             primary_candidates = []
@@ -530,8 +758,8 @@ class KBSearchRetriever:
             "query_variants": query_variants,
             "exact_hits": stage2_exact,
             "related_hits": stage2_related,
-            "hits": primary_candidates[:3],
-            "primary_candidates": primary_candidates[:3],
+            "hits": primary_candidates[:scan_limit],
+            "primary_candidates": primary_candidates[:scan_limit],
             "structured_fallbacks": structured_fallbacks,
             "fallback_used": fallback_used,
             "files_scanned": scan_stats.get("files_scanned", 0),
@@ -540,6 +768,8 @@ class KBSearchRetriever:
             "matched_quotes": scan_stats.get("matched_quotes", []),
             "only_structured_no_primary": bool(stage1.get("hits")) and not bool(primary_candidates),
         }
+        if "debug_scan" in scan_stats:
+            stage2["debug_scan"] = scan_stats["debug_scan"]
         if stage2["fallback_used"] and stage2["files_scanned"] == 0:
             stage2["files_scanned"] = 1
         return {"stage1": stage1, "stage2": stage2}

@@ -420,7 +420,10 @@ def _split_hits(result: dict[str, Any], *, include_raw: bool = False) -> dict[st
         "files_scanned": result.get("files_scanned", 0),
         "matched_files": result.get("matched_files", []),
         "matched_headings": result.get("matched_headings", []),
+        "matched_quotes": result.get("matched_quotes", []),
     }
+    if "debug_scan" in result:
+        payload["debug_scan"] = result["debug_scan"]
     if include_raw:
         payload["raw_hits"] = result.get("raw_hits", [])
         payload["inferred_hits"] = result.get("inferred_hits", [])
@@ -462,6 +465,7 @@ def inspect_kb_impl(
             stage = retriever.two_stage_retrieve(
                 query,
                 top_k=effective_limit,
+                limit=effective_limit,
                 collection=collection,
                 filters=filters or None,
                 query_mode=query_mode,
@@ -651,6 +655,7 @@ if typer:
             result = retriever.search(
                 query,
                 top_k=top_k,
+                limit=top_k,
                 collection=collection,
                 filters=filters or None,
                 query_mode=query_mode,
@@ -1200,6 +1205,7 @@ def _main_fallback():  # pragma: no cover
             out = retriever.search(
                 args.query,
                 top_k=args.top_k,
+                limit=args.top_k,
                 collection=args.collection,
                 filters=filters or None,
                 query_mode=args.query_mode,

@@ -46,6 +46,8 @@ def test_inspect_evidence_primary_missing_marks_candidate_only(monkeypatch):
     def fake_two_stage(self, query, **kwargs):
         assert kwargs.get("query_mode") == "evidence"
         assert kwargs.get("literal_first") is True
+        assert kwargs.get("top_k") == 8
+        assert kwargs.get("limit") == 8
         return {
             "stage1": {
                 "query_mode": "evidence",
@@ -119,6 +121,8 @@ def test_inspect_phrase_explicit_evidence_literal_first_show_raw_hits(monkeypatc
             "--query-mode",
             "evidence",
             "--literal-first",
+            "--limit",
+            "8",
             "--show-raw",
         ],
     )
