@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -560,6 +562,59 @@ def _write_candidate_markdown(path: Path, frontmatter: dict[str, Any], body: str
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _empty_candidate_manifest(*, base_corpus_version: str | None = None, base_ingest_run_id: str | None = None) -> dict[str, Any]:
+    return {
+        "base_corpus_version": base_corpus_version,
+        "base_ingest_run_id": base_ingest_run_id,
+        "current_upstream_corpus_version": base_corpus_version,
+        "last_synced_at": None,
+        "items": [],
+    }
+
+
+def _load_candidate_manifest(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return _empty_candidate_manifest()
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(loaded, list):
+        manifest = _empty_candidate_manifest()
+        manifest["items"] = loaded
+        return manifest
+    if not isinstance(loaded, dict):
+        return _empty_candidate_manifest()
+    if "items" not in loaded:
+        loaded["items"] = loaded.get("candidates", []) if isinstance(loaded.get("candidates"), list) else []
+    loaded.setdefault("base_corpus_version", None)
+    loaded.setdefault("base_ingest_run_id", None)
+    loaded.setdefault("current_upstream_corpus_version", loaded.get("base_corpus_version"))
+    loaded.setdefault("last_synced_at", None)
+    return loaded
+
+
+def _write_candidate_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    manifest = {**manifest, "items": sorted(manifest.get("items", []), key=lambda item: item.get("id", ""))}
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _extract_upstream_version(meta: dict[str, Any]) -> tuple[str | None, str | None]:
+    corpus_version = meta.get("corpus_version") or meta.get("version") or meta.get("kb_corpus_version")
+    ingest_run_id = meta.get("ingest_run_id") or meta.get("run_id") or meta.get("last_ingest_run_id")
+    return (str(corpus_version) if corpus_version is not None else None, str(ingest_run_id) if ingest_run_id is not None else None)
+
+
+def _clear_downstream_query_cache() -> list[str]:
+    cleared: list[str] = []
+    for path in [Path("data/cache/kb_queries"), Path("data/generated_candidates/.query_cache")]:
+        if path.exists():
+            shutil.rmtree(path)
+            cleared.append(str(path))
+    return cleared
+
+
+def _compact_for_compare(text: str) -> str:
+    return "".join(ch for ch in str(text) if not ch.isspace())
+
+
 def generate_candidate_card_impl(
     query: str,
     book_id: str,
@@ -588,15 +643,8 @@ def generate_candidate_card_impl(
     selected_hits = [h for h in hits if h.get("match_type") == "exact_phrase" and h.get("card_type") == "fenjuan"]
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = out_dir / "candidate_manifest.json"
-    existing: list[dict[str, Any]] = []
-    if manifest_path.exists():
-        loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if isinstance(loaded, list):
-            existing = loaded
-        elif isinstance(loaded, dict) and isinstance(loaded.get("candidates"), list):
-            existing = loaded["candidates"]
-
-    by_id = {str(item.get("id")): item for item in existing if item.get("id")}
+    manifest_doc = _load_candidate_manifest(manifest_path)
+    by_id = {str(item.get("id")): item for item in manifest_doc.get("items", []) if item.get("id")}
     generated: list[dict[str, Any]] = []
     for hit in selected_hits:
         normalized_term = KBSearchRetriever._normalize_query(query)
@@ -643,13 +691,17 @@ def generate_candidate_card_impl(
             "source_locator": source_locator,
             "match_offset": match_offset,
             "review_status": "pending",
+            "sync_status": "pending",
             "content_hash": content_hash,
+            "anchor_text": anchor_text,
         }
         by_id[candidate_id] = manifest_item
         generated.append(manifest_item)
 
-    manifest = sorted(by_id.values(), key=lambda item: item["id"])
-    manifest_path.write_text(json.dumps({"candidates": manifest}, ensure_ascii=False, indent=2), encoding="utf-8")
+    if manifest_doc.get("base_corpus_version") is None:
+        manifest_doc["base_corpus_version"] = manifest_doc.get("current_upstream_corpus_version")
+    manifest_doc["items"] = list(by_id.values())
+    _write_candidate_manifest(manifest_path, manifest_doc)
     return {
         "mode": "generate_candidate_card",
         "query": query,
@@ -660,6 +712,107 @@ def generate_candidate_card_impl(
         "manifest_path": str(manifest_path),
         "files_scanned": scan_meta.get("files_scanned", 0),
         "matched_headings": scan_meta.get("matched_headings", []),
+    }
+
+
+def sync_upstream_status_impl(
+    book_id: str,
+    candidate_root: Path,
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    top_k: int = 8,
+) -> dict[str, Any]:
+    retriever = KBSearchRetriever(base_url=base_url, api_key=api_key)
+    try:
+        upstream_meta = retriever.upstream_meta()
+    except Exception as exc:
+        return {
+            "mode": "sync_upstream_status",
+            "book_id": book_id,
+            "candidate_root": str(candidate_root),
+            "error": str(exc),
+            "hint": "check KB_SEARCH_BASE_URL/KB_SEARCH_API_PORT and whether upstream kb-search service is running; sync does not call ingest",
+        }
+    corpus_version, ingest_run_id = _extract_upstream_version(upstream_meta)
+    synced_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    cleared_cache: list[str] = []
+    manifests: list[dict[str, Any]] = []
+
+    for manifest_path in candidate_root.rglob("candidate_manifest.json"):
+        manifest = _load_candidate_manifest(manifest_path)
+        previous_version = manifest.get("current_upstream_corpus_version")
+        if corpus_version and previous_version and previous_version != corpus_version:
+            cleared_cache.extend(_clear_downstream_query_cache())
+        manifest.setdefault("base_corpus_version", corpus_version)
+        manifest.setdefault("base_ingest_run_id", ingest_run_id)
+        manifest["current_upstream_corpus_version"] = corpus_version
+        manifest["last_synced_at"] = synced_at
+        changed = 0
+        counts = {"pending": 0, "merged": 0, "needs_review": 0, "stale": 0}
+        for item in manifest.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            if book_id and item.get("kb_book_id") != book_id:
+                continue
+            old_status = item.get("sync_status", "pending")
+            source_file = item.get("source_file")
+            if source_file and not Path(str(source_file)).exists():
+                item["sync_status"] = "stale"
+            else:
+                term = str(item.get("term") or "")
+                source_locator = str(item.get("source_locator") or "")
+                anchor_text = str(item.get("anchor_text") or "")
+                content_hash = str(item.get("content_hash") or "")
+                query = " ".join(part for part in [term, source_locator, anchor_text[:120]] if part)
+                try:
+                    result = retriever.retrieve(
+                        query or term,
+                        top_k=top_k,
+                        filters={"kb_book_id": item.get("kb_book_id") or book_id},
+                        query_mode="evidence",
+                        literal_first=True,
+                    )
+                except Exception:
+                    result = {"hits": [], "exact_hits": [], "related_hits": []}
+                hits = result.get("hits", []) + result.get("exact_hits", []) + result.get("related_hits", [])
+                compact_anchor = _compact_for_compare(anchor_text)
+                merged = False
+                term_hit = False
+                for hit in hits:
+                    hit_text = "\n".join(str(hit.get(k) or "") for k in ("content_hash", "anchor_text", "excerpt", "snippet", "title", "source_locator"))
+                    if content_hash and content_hash in hit_text:
+                        merged = True
+                        break
+                    compact_hit = _compact_for_compare(hit_text)
+                    if compact_anchor and (compact_anchor in compact_hit or compact_hit in compact_anchor):
+                        merged = True
+                        break
+                    if term and _compact_for_compare(term) in compact_hit:
+                        term_hit = True
+                if merged:
+                    item["sync_status"] = "merged"
+                elif term_hit:
+                    item["sync_status"] = "needs_review"
+                else:
+                    item["sync_status"] = "pending"
+            item["last_synced_at"] = synced_at
+            item["current_upstream_corpus_version"] = corpus_version
+            if item.get("sync_status") != old_status:
+                changed += 1
+            status = str(item.get("sync_status") or "pending")
+            counts[status] = counts.get(status, 0) + 1
+        _write_candidate_manifest(manifest_path, manifest)
+        manifests.append({"path": str(manifest_path), "changed": changed, "counts": counts})
+    return {
+        "mode": "sync_upstream_status",
+        "book_id": book_id,
+        "candidate_root": str(candidate_root),
+        "current_upstream_corpus_version": corpus_version,
+        "base_ingest_run_id": ingest_run_id,
+        "last_synced_at": synced_at,
+        "manifests": manifests,
+        "cleared_cache": sorted(set(cleared_cache)),
     }
 
 def resolve_evidence_impl(rule: Path, kb_root: Path | None = None, strict: bool = False):
@@ -734,6 +887,17 @@ if typer:
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
+
+
+    @app.command("sync-upstream-status")
+    def sync_upstream_status(
+        book_id: str = typer.Option(..., "--book-id"),
+        candidate_root: Path = typer.Option(Path("data/generated_candidates"), "--candidate-root"),
+        base_url: str | None = typer.Option(None, "--base-url"),
+        api_key: str | None = typer.Option(None, "--api-key"),
+    ):
+        out = sync_upstream_status_impl(book_id, candidate_root, base_url=base_url, api_key=api_key)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
     @app.command("resolve-evidence")
     def resolve_evidence_cmd(
         rule: Path = typer.Option(..., "--rule"),
@@ -1188,6 +1352,11 @@ def _main_fallback():  # pragma: no cover
     p_candidate.add_argument("--limit", type=int, default=None)
     p_candidate.add_argument("--base-url")
     p_candidate.add_argument("--api-key")
+    p_sync = sub.add_parser("sync-upstream-status")
+    p_sync.add_argument("--book-id", required=True)
+    p_sync.add_argument("--candidate-root", default="data/generated_candidates")
+    p_sync.add_argument("--base-url")
+    p_sync.add_argument("--api-key")
     p_detect.add_argument("--datetime", required=True)
     p_detect.add_argument("--lon", type=float, required=True)
     p_detect.add_argument("--lat", type=float, required=True)
@@ -1362,6 +1531,14 @@ def _main_fallback():  # pragma: no cover
             args.book_id,
             Path(args.out_dir),
             limit=args.limit,
+            base_url=args.base_url,
+            api_key=args.api_key,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "sync-upstream-status":
+        out = sync_upstream_status_impl(
+            args.book_id,
+            Path(args.candidate_root),
             base_url=args.base_url,
             api_key=args.api_key,
         )

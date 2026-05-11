@@ -504,3 +504,57 @@ def test_candidate_overlay_enabled_pending_candidate_is_not_exact(monkeypatch, t
     assert out["stage2"]["primary_candidates"][0]["source_namespace"] == "downstream_generated"
     assert out["stage2"]["primary_candidates"][0]["review_status"] == "pending"
     assert out["stage2"]["exact_hits"] == []
+
+
+def test_candidate_overlay_skips_merged_and_stale_manifest_items(monkeypatch, tmp_path):
+    from dataclasses import replace
+    from src.config.settings import get_settings
+
+    overlay_root = tmp_path / "generated_candidates"
+    out_dir = overlay_root / "extract_cards" / "kaiyuan_zhanjing"
+    out_dir.mkdir(parents=True)
+    for name, status in [("merged", "merged"), ("stale", "stale"), ("pending", "pending")]:
+        card_path = out_dir / f"{name}.md"
+        card_path.write_text(
+            "---\n"
+            f"id: \"{name}\"\n"
+            "kb_book_id: \"kaiyuan_zhanjing\"\n"
+            "book_title: \"唐開元占經\"\n"
+            "card_type: \"extract_card\"\n"
+            "source_namespace: \"downstream_generated\"\n"
+            "review_status: \"pending\"\n"
+            "term: \"荧惑守心\"\n"
+            "aliases: [\"荧惑守心\", \"熒惑守心\"]\n"
+            "source_locator: \"KR3g0018_031\"\n"
+            "source_volume: \"KR3g0018_031\"\n"
+            "anchor_text: \"熒惑守心\"\n"
+            "match_type: \"exact_phrase\"\n"
+            "match_offset: 1\n"
+            "---\n候选\n",
+            encoding="utf-8",
+        )
+    (out_dir / "candidate_manifest.json").write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "merged", "path": str(out_dir / "merged.md"), "sync_status": "merged"},
+                    {"id": "stale", "path": str(out_dir / "stale.md"), "sync_status": "stale"},
+                    {"id": "pending", "path": str(out_dir / "pending.md"), "sync_status": "pending"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    settings = replace(
+        get_settings(),
+        kb_enable_candidate_overlay=True,
+        kb_candidate_overlay_root=str(overlay_root),
+        kb_sources_root=str(tmp_path / "empty"),
+        kb_enable_obsidian_source=False,
+    )
+    monkeypatch.setattr(KBSearchRetriever, "_request", lambda self, method, path, **kwargs: {"hits": []})
+    monkeypatch.setattr(KBSearchRetriever, "_scan_primary_files", lambda self, query, **kwargs: ([], {"files_scanned": 0, "matched_files": [], "matched_headings": [], "matched_quotes": []}))
+    r = KBSearchRetriever(base_url="http://127.0.0.1:8008", api_key="k", settings=settings)
+    out = r.two_stage_retrieve("荧惑守心", filters={"kb_book_id": "kaiyuan_zhanjing"}, query_mode="evidence")
+    assert [hit["chunk_id"] for hit in out["stage2"]["primary_candidates"]] == ["candidate:pending"]

@@ -463,6 +463,32 @@ class KBSearchRetriever:
                 meta[key] = value.strip('"\'')
         return meta, body
 
+    @staticmethod
+    def _candidate_manifest_statuses(root: Path) -> dict[str, dict[str, Any]]:
+        statuses: dict[str, dict[str, Any]] = {}
+        for manifest_path in root.rglob("candidate_manifest.json"):
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(manifest, dict):
+                items = manifest.get("items") or manifest.get("candidates") or []
+            elif isinstance(manifest, list):
+                items = manifest
+            else:
+                items = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                item_path = str(item.get("path") or "")
+                item_id = str(item.get("id") or "")
+                if item_path:
+                    statuses[item_path] = item
+                    statuses[str((manifest_path.parent / item_path).resolve())] = item
+                if item_id:
+                    statuses[item_id] = item
+        return statuses
+
     def _scan_candidate_overlay(
         self,
         query: str,
@@ -475,12 +501,23 @@ class KBSearchRetriever:
         if not root.exists():
             return []
         variants = self._expanded_query_variants(query_variants or [query])
+        manifest_statuses = self._candidate_manifest_statuses(root)
         hits: list[dict[str, Any]] = []
         for path in root.rglob("*.md"):
             parsed = self._parse_candidate_card(path)
             if not parsed:
                 continue
             meta, body = parsed
+            manifest_item = (
+                manifest_statuses.get(str(path))
+                or manifest_statuses.get(str(path.resolve()))
+                or manifest_statuses.get(str(meta.get("id") or ""))
+                or {}
+            )
+            sync_status = str(manifest_item.get("sync_status") or meta.get("sync_status") or "pending")
+            review_status = str(manifest_item.get("review_status") or meta.get("review_status") or "pending")
+            if sync_status in {"merged", "stale"}:
+                continue
             if meta.get("source_namespace") != "downstream_generated":
                 continue
             if meta.get("card_type") != "extract_card":
@@ -493,8 +530,7 @@ class KBSearchRetriever:
             context = self._find_query_context(searchable, variants, heading=str(meta.get("source_locator") or path.stem))
             if not context["matched"]:
                 continue
-            review_status = str(meta.get("review_status") or "pending")
-            source_file = str(meta.get("source_file") or "")
+            source_file = str(meta.get("source_file") or manifest_item.get("source_file") or "")
             title = str(meta.get("source_volume") or meta.get("source_locator") or path.stem)
             excerpt = str(meta.get("anchor_text") or context.get("excerpt") or "")
             match_type = str(meta.get("match_type") or context.get("match_type") or "exact_phrase")
@@ -514,6 +550,7 @@ class KBSearchRetriever:
                     "source_namespace": "downstream_generated",
                     "generated_status": meta.get("generated_status"),
                     "review_status": review_status,
+                    "sync_status": sync_status,
                     "title": title,
                     "book_title": meta.get("book_title"),
                     "kb_book_id": meta.get("kb_book_id"),
@@ -642,6 +679,12 @@ class KBSearchRetriever:
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/v1/health", use_auth=False)
+
+    def upstream_meta(self) -> dict[str, Any]:
+        try:
+            return self._request("GET", "/v1/meta", use_auth=False)
+        except KBSearchError:
+            return self.health()
 
     def retrieve(
         self,
