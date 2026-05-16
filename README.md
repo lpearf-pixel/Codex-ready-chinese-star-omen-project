@@ -11,6 +11,27 @@
 3. 用“两段式检索”保证证据可追溯：先高召回，再强制回到原文证据。
 4. 把研究、推演、验证流程解耦，支持后续长期迭代。
 
+
+## 上下游契约同步 v1
+
+本项目与上游 `Local-KB-Unified` 采用三层边界：
+
+1. **上游契约层**：Obsidian / 本地知识库只定义静态知识语义 frontmatter，详见 `docs/upstream-contract-v1.md` 与 `data/contracts/upstream_contract.json`。上游不承载 detector、benchmark、calibration、review、profile 等运行态结果。
+2. **ingest 投影层**：现有上游 `make ingest` 仍是唯一正式 ingest 管道，负责把 frontmatter 字段扁平化到 Qdrant payload 顶层，详见 `docs/payload-contract-v1.md` 与 `data/contracts/payload_contract.json`。下游不会新建第二套正式 ingest 管道。
+3. **下游消费层**：本 Python 项目通过 `src/connectors/kb_contract_adapter.py` 统一消费 payload，字段优先级为 payload 顶层 → `frontmatter`/`metadata` → 路径推断。
+
+主字段清单：`kb_book_id`、`book_title`、`card_type`、`evidence_level`、`final_citable`、`query_mode_hint`、`aliases`、`variant_terms`、`normalized_terms`、`source_locator`。
+
+当前 deprecated fallback 字段：`book_id`。它仅用于兼容旧 payload，内部会标准化为 `kb_book_id`，新 payload / frontmatter 不应继续依赖它。
+
+契约验收命令：
+
+```bash
+python -m src.cli validate-upstream-contract
+python -m src.cli validate-payload-contract
+python -m src.cli validate-consumer-contract
+```
+
 ## 当前能力（M0）
 
 - 四大核心 Schema：`Asterism` / `CelestialEvent` / `OmenRule` / `BacktestRecord`

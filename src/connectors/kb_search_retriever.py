@@ -13,6 +13,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from src.config.settings import Settings, SettingsError, get_settings, mask_secret, require_api_key
 from src.connectors.kb_contract import infer_metadata_from_path
+from src.connectors.kb_contract_adapter import adapt_kb_payload
 
 logger = logging.getLogger(__name__)
 
@@ -144,29 +145,31 @@ class KBSearchRetriever:
         inferred_hits: list[dict[str, Any]] = []
         for hit in raw_hits:
             upstream_meta = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
-            inferred = infer_metadata_from_path(hit.get("path"))
             path = str(hit.get("path") or "")
             title = str(hit.get("title") or "")
-            heading_path = hit.get("heading_path") or upstream_meta.get("heading_path") or [title] if title else []
+            adapted = adapt_kb_payload(hit)
+            adapted_dict = adapted.to_dict()
+            heading_path = hit.get("heading_path") or upstream_meta.get("heading_path") or ([title] if title else [])
             volume = hit.get("volume") or upstream_meta.get("volume")
             if not volume and "卷" in title:
                 volume = title
             section = hit.get("section") or upstream_meta.get("section") or (heading_path[-1] if heading_path else title or None)
-            source_locator = hit.get("source_locator") or upstream_meta.get("source_locator")
+            source_locator = adapted.source_locator or hit.get("source_locator") or upstream_meta.get("source_locator")
             if not source_locator:
                 source_locator = f"{volume}/{section}" if volume and section else section or volume or None
             anchor_text = hit.get("anchor_text") or upstream_meta.get("anchor_text")
             if not anchor_text:
                 anchor_text = str(hit.get("snippet") or "")[:120]
-            kb_book_id = hit.get("kb_book_id") or upstream_meta.get("kb_book_id") or hit.get("book_id") or upstream_meta.get("book_id") or inferred.get("book_id")
+            kb_book_id = adapted.kb_book_id
             inferred_hits.append(
                 {
                     **hit,
-                    "book_title": hit.get("book_title") or upstream_meta.get("book_title") or inferred.get("book_title"),
+                    **{k: v for k, v in adapted_dict.items() if k != "source_locator"},
+                    "book_title": adapted.book_title,
                     "kb_book_id": kb_book_id,
                     "book_id": kb_book_id,
-                    "card_type": hit.get("card_type") or upstream_meta.get("card_type") or inferred.get("card_type"),
-                    "evidence_level": hit.get("evidence_level") or upstream_meta.get("evidence_level") or inferred.get("evidence_level"),
+                    "card_type": adapted.card_type,
+                    "evidence_level": adapted.evidence_level,
                     "volume": volume,
                     "section": section,
                     "source_locator": source_locator,

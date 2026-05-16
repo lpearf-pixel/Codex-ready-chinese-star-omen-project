@@ -24,6 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover
 from src.config.settings import get_settings
 from src.connectors.evidence_resolver import resolve_evidence
 from src.connectors.kb_contract import STAGE1_RECALL_CARD_TYPES, STAGE2_PRIMARY_CARD_TYPES, is_citable_evidence
+from src.connectors.kb_contract_adapter import adapt_kb_payload
 from src.connectors.kb_search_retriever import KBSearchRetriever
 from src.connectors.manifest_reader import ManifestReader
 from src.eval.corpus_eval import load_eval_cases, run_corpus_eval
@@ -387,6 +388,155 @@ def export_layered_report_impl(*, run_id: str, level: str) -> dict[str, Any]:
         p.write_text(text, encoding="utf-8")
         files.append(str(p))
     return {"run_id": run_id, "level": level, "count": len(files), "files": files}
+
+
+
+CONTRACT_PRIMARY_FIELDS = [
+    "kb_book_id",
+    "book_title",
+    "card_type",
+    "evidence_level",
+    "final_citable",
+    "query_mode_hint",
+]
+
+
+def _parse_markdown_frontmatter(path: Path) -> dict[str, Any] | None:
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---", 4)
+    if end < 0:
+        return None
+    meta: dict[str, Any] = {}
+    for raw_line in text[4:end].splitlines():
+        if not raw_line.strip() or raw_line.lstrip().startswith("#") or ":" not in raw_line:
+            continue
+        key, value = raw_line.split(":", 1)
+        value = value.strip()
+        try:
+            meta[key.strip()] = json.loads(value)
+        except json.JSONDecodeError:
+            meta[key.strip()] = value.strip('"\'')
+    return meta
+
+
+def validate_upstream_contract_impl(root: Path = Path("data/processed"), contract_path: Path = Path("data/contracts/upstream_contract.json")) -> dict[str, Any]:
+    contract = _load_json(contract_path)
+    required = contract.get("required", [])
+    properties = contract.get("properties", {})
+    enum_fields = {key: set(value.get("enum", [])) for key, value in properties.items() if isinstance(value, dict) and value.get("enum")}
+    deprecated = set(contract.get("deprecated_fields", []))
+    checked = 0
+    errors: list[dict[str, Any]] = []
+    deprecated_usage: list[dict[str, Any]] = []
+    for path in root.rglob("*.md") if root.exists() else []:
+        frontmatter = _parse_markdown_frontmatter(path)
+        if frontmatter is None:
+            continue
+        checked += 1
+        for field in required:
+            if frontmatter.get(field) is None:
+                errors.append({"path": str(path), "field": field, "error": "missing_required_frontmatter"})
+        for field, allowed in enum_fields.items():
+            if frontmatter.get(field) is not None and frontmatter[field] not in allowed:
+                errors.append({"path": str(path), "field": field, "value": frontmatter[field], "error": "invalid_enum"})
+        for field in deprecated:
+            if field in frontmatter:
+                deprecated_usage.append({"path": str(path), "field": field})
+    return {"ok": not errors, "contract": str(contract_path), "root": str(root), "checked": checked, "errors": errors, "deprecated_usage": deprecated_usage}
+
+
+def validate_payload_contract_impl(contract_path: Path = Path("data/contracts/payload_contract.json"), sample_path: Path | None = None) -> dict[str, Any]:
+    contract = _load_json(contract_path)
+    required = contract.get("top_level_required_after_flatten") or contract.get("required", [])
+    sample = _load_json(sample_path) if sample_path else {
+        "kb_book_id": "kaiyuan_zhanjing",
+        "book_title": "唐開元占經",
+        "card_type": "fenjuan",
+        "evidence_level": "primary",
+        "final_citable": True,
+        "query_mode_hint": "evidence",
+        "aliases": ["荧惑守心", "熒惑守心"],
+        "source_locator": "KR3g0018_031",
+    }
+    if isinstance(sample, dict) and isinstance(sample.get("payload"), dict):
+        sample = sample["payload"]
+    adapted = adapt_kb_payload(sample if isinstance(sample, dict) else {})
+    missing_top_level = [field for field in required if not isinstance(sample, dict) or sample.get(field) is None]
+    errors = [{"field": field, "error": "missing_top_level_payload_field"} for field in missing_top_level]
+    return {
+        "ok": not errors,
+        "contract": str(contract_path),
+        "checked": 1,
+        "missing_top_level": missing_top_level,
+        "errors": errors,
+        "deprecated_fields": contract.get("deprecated_fields", []),
+        "adapted": adapted.to_dict(),
+    }
+
+
+def validate_consumer_contract_impl() -> dict[str, Any]:
+    top_level = {
+        "kb_book_id": "top_book",
+        "frontmatter": {"kb_book_id": "frontmatter_book"},
+        "path": "/docs/古籍/唐開元占經/分卷/KR3g0018_031.md",
+        "book_title": "Top Book",
+        "card_type": "fenjuan",
+        "evidence_level": "primary",
+        "final_citable": True,
+        "query_mode_hint": "evidence",
+    }
+    frontmatter = {
+        "frontmatter": {
+            "kb_book_id": "frontmatter_book",
+            "book_title": "唐開元占經",
+            "card_type": "term_card",
+            "evidence_level": "structured",
+            "final_citable": False,
+            "query_mode_hint": "knowledge",
+        },
+        "path": "/docs/古籍/唐開元占經/分卷/KR3g0018_031.md",
+    }
+    path_only = {"path": "/docs/古籍/唐開元占經/分卷/KR3g0018_031.md"}
+    deprecated = {"book_id": "legacy_book", "card_type": "fenjuan"}
+    adapted_top = adapt_kb_payload(top_level)
+    adapted_frontmatter = adapt_kb_payload(frontmatter)
+    adapted_path = adapt_kb_payload(path_only)
+    adapted_deprecated = adapt_kb_payload(deprecated)
+    inspect_filters: dict[str, Any] = {}
+    search_filters: dict[str, Any] = {}
+    book_id = "kaiyuan_zhanjing"
+    inspect_filters["kb_book_id"] = book_id
+    search_filters["kb_book_id"] = book_id
+    errors: list[str] = []
+    if adapted_top.kb_book_id != "top_book":
+        errors.append("top_level_priority_failed")
+    if adapted_frontmatter.kb_book_id != "frontmatter_book":
+        errors.append("frontmatter_priority_failed")
+    if adapted_path.kb_book_id != "kaiyuan_zhanjing":
+        errors.append("path_fallback_failed")
+    if adapted_deprecated.kb_book_id != "legacy_book" or "book_id" not in adapted_deprecated.deprecated_fields_used:
+        errors.append("deprecated_book_id_fallback_failed")
+    if inspect_filters != search_filters or inspect_filters.get("kb_book_id") != book_id:
+        errors.append("cli_book_id_mapping_failed")
+    phrase_mode = "evidence" if "荧惑守心" in KBSearchRetriever.PRIMARY_ONLY_PHRASES else KBSearchRetriever._query_mode("荧惑守心")
+    entity_mode = KBSearchRetriever._query_mode("心宿")
+    if phrase_mode != "evidence" or entity_mode != "knowledge":
+        errors.append("query_mode_default_failed")
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "deprecated_fields": ["book_id"],
+        "adapter_priority": {
+            "top_level": adapted_top.to_dict(),
+            "frontmatter": adapted_frontmatter.to_dict(),
+            "path_fallback": adapted_path.to_dict(),
+            "deprecated": adapted_deprecated.to_dict(),
+        },
+        "cli_filters": {"inspect_kb": inspect_filters, "search_kb": search_filters},
+        "query_modes": {"荧惑守心": phrase_mode, "心宿": entity_mode},
+    }
 
 
 def validate_data_impl(
@@ -867,6 +1017,30 @@ if typer:
         typer.echo(f"Validation passed: {out['rules']} rules, {out['asterisms']} asterisms")
 
 
+    @app.command("validate-upstream-contract")
+    def validate_upstream_contract(
+        root: Path = typer.Option(Path("data/processed"), "--root"),
+        contract: Path = typer.Option(Path("data/contracts/upstream_contract.json"), "--contract"),
+    ):
+        out = validate_upstream_contract_impl(root=root, contract_path=contract)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+    @app.command("validate-payload-contract")
+    def validate_payload_contract(
+        contract: Path = typer.Option(Path("data/contracts/payload_contract.json"), "--contract"),
+        sample: Path | None = typer.Option(None, "--sample"),
+    ):
+        out = validate_payload_contract_impl(contract_path=contract, sample_path=sample)
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+    @app.command("validate-consumer-contract")
+    def validate_consumer_contract():
+        out = validate_consumer_contract_impl()
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+
+
     @app.command("inspect-kb")
     def inspect_kb(
         root: Path | None = typer.Option(None, "--root"),
@@ -1301,6 +1475,13 @@ def _main_fallback():  # pragma: no cover
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("validate-data")
+    p_val_up = sub.add_parser("validate-upstream-contract")
+    p_val_up.add_argument("--root", default="data/processed")
+    p_val_up.add_argument("--contract", default="data/contracts/upstream_contract.json")
+    p_val_payload = sub.add_parser("validate-payload-contract")
+    p_val_payload.add_argument("--contract", default="data/contracts/payload_contract.json")
+    p_val_payload.add_argument("--sample")
+    sub.add_parser("validate-consumer-contract")
 
     p_inspect = sub.add_parser("inspect-kb")
     p_inspect.add_argument("--root")
@@ -1470,6 +1651,15 @@ def _main_fallback():  # pragma: no cover
     if args.cmd == "validate-data":
         out = validate_data_impl()
         print(f"Validation passed: {out['rules']} rules, {out['asterisms']} asterisms")
+    elif args.cmd == "validate-upstream-contract":
+        out = validate_upstream_contract_impl(root=Path(args.root), contract_path=Path(args.contract))
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "validate-payload-contract":
+        out = validate_payload_contract_impl(contract_path=Path(args.contract), sample_path=Path(args.sample) if args.sample else None)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.cmd == "validate-consumer-contract":
+        out = validate_consumer_contract_impl()
+        print(json.dumps(out, ensure_ascii=False, indent=2))
     elif args.cmd == "inspect-kb":
         out = inspect_kb_impl(
             Path(args.root) if args.root else None,

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-ready.local/contracts/upstream_contract_v1.json",
+  "title": "Local-KB Unified upstream frontmatter contract v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["kb_book_id", "book_title", "card_type", "evidence_level", "query_mode_hint"],
+  "properties": {
+    "kb_book_id": {"type": "string", "minLength": 1, "description": "Canonical book identifier. Primary field."},
+    "book_id": {"type": "string", "deprecated": true, "description": "Deprecated fallback only; consumers must normalize to kb_book_id."},
+    "book_title": {"type": "string", "minLength": 1},
+    "card_type": {
+      "type": "string",
+      "enum": ["fenjuan", "fulltext", "xingguan_card", "zhusu_card", "term_card", "extract_card", "topic_index", "chapter_summary", "nav", "prompt_asset", "qa_example"]
+    },
+    "evidence_level": {"type": "string", "enum": ["primary", "structured", "index", "prompt", "example", "candidate"]},
+    "final_citable": {"type": "boolean"},
+    "query_mode_hint": {"type": "string", "enum": ["knowledge", "evidence", "support"]},
+    "aliases": {"type": "array", "items": {"type": "string"}},
+    "variant_terms": {"type": "array", "items": {"type": "string"}},
+    "normalized_terms": {"type": "array", "items": {"type": "string"}},
+    "source_locator": {"type": "string"}
+  },
+  "deprecated_fields": ["book_id"],
+  "static_only": true,
+  "runtime_fields_forbidden": ["detector_output", "benchmark_result", "calibration_status", "review_result", "profile_state"]
+}

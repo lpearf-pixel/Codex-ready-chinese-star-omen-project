@@ -5,11 +5,13 @@ from typing import Any
 
 from src.config.settings import get_settings
 from src.connectors.kb_contract import can_be_final_fact, is_citable_evidence, resolve_evidence_level
+from src.connectors.kb_contract_adapter import adapt_kb_payload
 
 
 def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None) -> dict[str, Any]:
     settings = get_settings()
-    card_type = evidence.get("card_type")
+    adapted = adapt_kb_payload(evidence)
+    card_type = adapted.card_type or evidence.get("card_type")
     inferred_level = resolve_evidence_level(card_type) if card_type else None
 
     locator = evidence.get("locator")
@@ -29,7 +31,7 @@ def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None
     anchor_text = evidence.get("anchor_text") or evidence.get("quote")
 
     resolved: dict[str, Any] = {
-        "kb_book_id": evidence.get("kb_book_id"),
+        "kb_book_id": adapted.kb_book_id,
         "note_id": evidence.get("note_id"),
         "relative_path": evidence.get("relative_path"),
         "card_type": card_type,
@@ -38,14 +40,14 @@ def resolve_evidence(evidence: dict[str, Any], kb_root: str | Path | None = None
         "quote": evidence.get("quote"),
         "volume": volume,
         "section": section,
-        "source_locator": source_locator,
+        "source_locator": adapted.source_locator or source_locator,
         "heading_path": heading_path,
         "anchor_text": anchor_text,
         "paragraph_index": evidence.get("paragraph_index"),
         "ingest_source": evidence.get("ingest_source", settings.kb_obsidian_ingest_source_label),
         "source_type": evidence.get("source_type", "docs"),
-        "evidence_level": evidence.get("evidence_level") or inferred_level,
-        "final_citable": can_be_final_fact(card_type) if card_type else False,
+        "evidence_level": adapted.evidence_level or evidence.get("evidence_level") or inferred_level,
+        "final_citable": adapted.final_citable if adapted.final_citable is not None else (can_be_final_fact(card_type) if card_type else False),
         "candidate_reason": None,
     }
 
